@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "视频转文字 · Chrome 连接器",
+  "version": "0.2.0",
+  "description": "仅在本机视频工具请求时，从已登录的抖音页面读取目标视频和字幕资料；不读取或导出 Cookie。",
+  "permissions": [
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.douyin.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1/*",
+        "http://localhost/*"
+      ],
+      "include_globs": [
+        "http://127.0.0.1:8765/*",
+        "http://localhost:8765/*"
+      ],
+      "js": [
+        "local-page.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "version_name": "0.2.0-rc.1"
+}

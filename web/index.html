@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>视频转文字</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">▶︎</span>
+    <div>
+      <div class="brand-title">视频转文字</div>
+      <div class="brand-sub">抖音 · 小红书 · YouTube · B站 · 本地视频</div>
+    </div>
+  </div>
+  <div class="top-actions">
+    <button id="doctorPill" class="pill pill-wait" title="点开看每一项检查">环境自检：检查中…</button>
+    <label class="switch" title="打开后能看到每条命令、原始输出、耗时等全部细节">
+      <input type="checkbox" id="devToggle">
+      <span class="track"><span class="thumb"></span></span>
+      <span class="switch-label">开发模式</span>
+    </label>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="main-col">
+    <!-- 输入 -->
+    <div class="card input-card" id="inputCard">
+      <label for="input" class="card-title">把视频链接贴进来</label>
+      <textarea id="input" rows="3" spellcheck="false"
+        placeholder="粘贴视频链接（整段分享文案也行，会自动找出链接），或本机视频文件的路径…"></textarea>
+      <div class="drop-hint" id="dropHint">也可以把视频 / 音频文件直接拖到上面这个框里</div>
+      <div class="cookie-module">
+        <label class="switch" for="optDouyinChrome">
+          <input type="checkbox" id="optDouyinChrome" aria-describedby="chromeHint">
+          <span class="track"><span class="thumb"></span></span>
+          <span class="switch-label">使用已登录的 Chrome 获取抖音视频和字幕</span>
+        </label>
+        <p id="chromeHint" class="muted small" aria-live="polite">已关闭：按原来的访客流程处理。</p>
+        <div id="chromeSettings" hidden>
+          <p id="chromeStatus" class="small" aria-live="polite">正在检查 Chrome 连接…</p>
+          <button id="openChromeBtn" class="ghost" type="button">在 Chrome 打开此网页</button>
+          <details id="chromeSetup">
+            <summary>首次连接：只需设置一次</summary>
+            <ol class="small">
+              <li>点击上面的按钮，在平常登录抖音的 Chrome 中使用这个网页。</li>
+              <li>在 Chrome 地址栏输入 <code>chrome://extensions</code>，打开「开发者模式」。</li>
+              <li>点击「加载已解压的扩展程序」，选择项目里的 <code>chrome-connector</code> 文件夹。<button id="chromeFolderBtn" class="link" type="button">打开连接器文件夹</button></li>
+              <li>刷新本机网页，看到「Chrome 已连接」就可以开始。抖音需要保持登录。</li>
+            </ol>
+            <p class="muted small">连接器只在此开关开启的任务中读取目标抖音视频资料。账号 Cookie 留在 Chrome 中；视频地址和字幕只传给本机工具。用完会自动关闭它新开的目标视频标签页。</p>
+          </details>
+        </div>
+      </div>
+      <details class="options">
+        <summary>选项</summary>
+        <div class="opt-grid">
+          <label>语言
+            <select id="optLang">
+              <option value="auto">自动识别</option>
+              <option value="zh">中文</option>
+              <option value="en">英文</option>
+              <option value="ja">日文</option>
+              <option value="yue">粤语</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="optSubs" checked> 有现成字幕就直接用（更快更准）</label>
+          <label class="check"><input type="checkbox" id="optKeep"> 下载完整视频（默认只要音频）</label>
+          <label class="check"><input type="checkbox" id="optThird"> 允许用第三方解析网站兜底
+            <span class="muted">（会把链接发给别人的网站，默认关）</span></label>
+          <label class="wide">专业词提示（人名、术语，用逗号隔开，能减少同音错字）
+            <input type="text" id="optPrompt" placeholder="例如：高斯, 拉马努金, Transformer">
+          </label>
+          <label class="check dev-only"><input type="checkbox" id="optHeaded"> 浏览器步骤显示窗口（调试用）</label>
+        </div>
+      </details>
+      <div class="input-actions">
+        <button id="startBtn" class="primary" disabled>开始转文字</button>
+        <span id="inputMsg" class="muted"></span>
+      </div>
+    </div>
+
+    <!-- 预计步骤 -->
+    <div class="card plan-card" id="planCard" hidden>
+      <div class="card-title">预计会经过这些步骤 <span id="planPlatform" class="chip"></span></div>
+      <div id="planWarn" class="warn-box" hidden></div>
+      <p class="muted small">还没开始。每一步都有说明；拿视频这一步会按顺序试几种办法，前一种被拦了就自动换下一种。</p>
+      <ol id="planSteps" class="plan-steps"></ol>
+    </div>
+
+    <!-- 任务详情 -->
+    <div class="card job-card" id="jobCard" hidden>
+      <div class="job-head">
+        <div class="job-title-wrap">
+          <div class="job-title" id="jobTitle">…</div>
+          <div class="job-meta" id="jobMeta"></div>
+        </div>
+        <div class="job-actions">
+          <span id="jobStatus" class="badge"></span>
+          <button id="retryBtn" class="ghost" hidden>重试</button>
+          <button id="revealBtn" class="ghost">打开文件夹</button>
+        </div>
+      </div>
+      <div id="connWarn" class="warn-box" hidden></div>
+      <div id="jobHow" class="how" hidden></div>
+      <div id="jobError" class="error-box" hidden></div>
+
+      <div class="job-body">
+        <div class="steps-col">
+          <div class="section-title">步骤</div>
+          <ol id="jobSteps" class="steps"></ol>
+        </div>
+        <div class="log-col">
+          <div class="section-title">
+            后台在做什么
+            <span class="muted small" id="logHint">（普通模式只显示关键步骤；打开「开发模式」看全部命令和原始输出）</span>
+          </div>
+          <div id="log" class="log" aria-live="polite"></div>
+          <div id="rawLinks" class="raw-links small"></div>
+        </div>
+      </div>
+
+      <div id="liveBox" class="live" hidden>
+        <div class="section-title">正在转写… <span id="liveProgress" class="muted small"></span></div>
+        <div class="progress"><div id="liveBar" class="bar"></div></div>
+        <div id="liveText" class="live-text"></div>
+      </div>
+
+      <div id="resultBox" class="result" hidden>
+        <div class="result-head">
+          <div class="section-title">文字稿 <span id="resultStats" class="muted small"></span></div>
+          <div class="result-actions">
+            <button id="copyBtn" class="ghost">复制全文</button>
+            <span id="downloads" class="downloads"></span>
+          </div>
+        </div>
+        <div id="playerWrap" class="player" hidden></div>
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="plain" role="tab">全文</button>
+          <button class="tab" data-tab="segments" role="tab">带时间戳（点时间可以跳到那里播放）</button>
+          <button class="tab dev-only" data-tab="raw" role="tab">原始记录</button>
+        </div>
+        <div id="tabPlain" class="tab-panel plain-text"></div>
+        <div id="tabSegments" class="tab-panel segments" hidden></div>
+        <div id="tabRaw" class="tab-panel raw" hidden></div>
+      </div>
+    </div>
+
+    <details class="card explainer" id="explainer">
+      <summary>它是怎么工作的？（大白话）</summary>
+      <div class="explain-body">
+        <p><b>从视频里拿文字，现在有两个来源：</b>平台现成的字幕、视频里的声音。现成字幕最快最准，所以永远第一个找；没有就把声音下载下来，在本机转成文字。（画面上印着的字暂时还不读。）</p>
+        <ol>
+          <li><b>认链接</b>：看是哪个平台，短链接先展开，去掉分享人的跟踪参数。</li>
+          <li><b>找现成字幕</b>：YouTube、小红书有现成字幕就直接用；B站默认转写；抖音可开启「使用已登录的 Chrome」，直接从真实浏览器页面查找字幕，没有就转写。勾选「下载完整视频」后，即使拿到原字幕，也会把视频一起下载。</li>
+          <li><b>拿视频/音频</b>：每个平台按「从快到稳」的顺序试几种办法，前一种失败就自动换下一种。你这个链接具体会试哪几种，上面「预计步骤」里写着：
+            <ul>
+              <li><b>抖音</b>：专用浏览器（从不登录）打开视频页，让页面自己去要视频地址 → 换一个全新的访客身份再试 → yt-dlp（备用，目前无效）→ 第三方解析网站（默认关闭）</li>
+              <li><b>小红书</b>：用「手机版网页」读视频地址（不登录、不带 cookie）→ 模拟 iPhone 的浏览器 → yt-dlp</li>
+              <li><b>B站</b>：yt-dlp 只下载音频（不带 cookie）→ 真浏览器从页面数据里找音频地址</li>
+              <li><b>YouTube</b>：yt-dlp 直接下载 → 换「嵌入播放器」通道 → 等一会儿再试</li>
+            </ul>
+          </li>
+          <li><b>抽音频</b>：ffmpeg 把声音抽出来。</li>
+          <li><b>语音转文字</b>：本机的 Whisper 模型转写，音频不上传。</li>
+          <li><b>整理输出</b>：生成 md / srt / txt / json，并记下这次是怎么拿到的。</li>
+        </ol>
+        <p class="muted">关闭 Chrome 开关时，原来的访客流程保持不变。开启后由连接器使用正常登录的 Chrome 打开目标视频，不再把 Cookie 搬到临时浏览器。下载完成后可以在结果区点「下载视频」「下载 srt」，或者点「打开文件夹」。所有记录都在 <code>data/jobs/任务编号/</code>。</p>
+      </div>
+    </details>
+  </section>
+
+  <aside class="side-col">
+    <div class="card">
+      <div class="card-title">历史任务 <button id="refreshHistory" class="link small">刷新</button></div>
+      <ul id="history" class="history"></ul>
+    </div>
+  </aside>
+</main>
+
+<div id="doctorModal" class="modal" hidden>
+  <div class="modal-box" role="dialog" aria-labelledby="doctorTitle">
+    <div class="modal-head">
+      <div class="card-title" id="doctorTitle">环境自检</div>
+      <div>
+        <button id="doctorRefresh" class="ghost">重新检查</button>
+        <button id="doctorClose" class="ghost">关闭</button>
+      </div>
+    </div>
+    <ul id="doctorList" class="doctor-list"></ul>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
