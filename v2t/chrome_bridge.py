@@ -169,7 +169,7 @@ def fetch(url, limit, *, media=False):
 class ChromeSubtitles(Strategy):
     key = 'douyin_chrome_subtitles'
     label = '从已登录的 Chrome 查字幕'
-    explain = '让你正常使用的 Chrome 打开目标视频，读取页面返回的字幕；没有就下载声音转写。'
+    explain = '让你正常使用的 Chrome 打开目标视频，读取页面返回的字幕；没有字幕时按所选模式继续。'
     needs = 'login'
     option_flag = 'douyin_chrome'
 
@@ -204,7 +204,8 @@ class ChromeSubtitles(Strategy):
                                 'how': '抖音平台字幕（从已登录的 Chrome 获取）', 'raw_file': raw_file}
                 at.success(f'拿到平台字幕：{len(segments)} 段')
                 return
-        raise StrategyFailed('Chrome 已交回视频资料，但没有可用字幕 → 接下来下载并在本机转写', expected=True)
+        next_step = '继续下载完整视频，不转录' if ctx.options.official_only else '接下来下载并在本机转写'
+        raise StrategyFailed(f'Chrome 已交回视频资料，但没有可用字幕 → {next_step}', expected=True)
 
 
 class ChromeMedia(Strategy):
