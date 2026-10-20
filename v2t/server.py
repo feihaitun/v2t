@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config, doctor, jobs
+from .media import AUDIO_EXTS, VIDEO_EXTS
 from .pipeline import make_plan, parse_input, run_job
 
 app = FastAPI(title="v2t 视频转文字")
@@ -53,6 +54,7 @@ async def _only_local_pages(request: Request, call_next):
 _queue: "queue.Queue[str]" = queue.Queue()
 _state = {"current": None}
 _doctor_cache: dict = {"t": 0.0, "data": None}
+_transcribe_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------- 后台工作线程
@@ -273,6 +275,48 @@ async def api_retry(job_id: str, request: Request) -> dict:
     job.emit("job_queued", f"重试任务 {job_id}")
     _queue.put(job.id)
     return job.data
+
+
+@app.post("/api/jobs/{job_id}/transcribe")
+def api_transcribe_downloaded(job_id: str) -> dict:
+    """用已下载的视频新建本机转录任务，不再访问平台。"""
+    with _transcribe_lock:
+        source = jobs.Job.load(_job_dir(job_id).name)
+        data = source.data
+        result = data.get("result") or {}
+        if data.get("status") != "done" or not data.get("options", {}).get("official_only") or result.get("source") != "platform_assets" or result.get("segments"):
+            raise HTTPException(409, "这条任务不是已完成且没有原字幕的原文件任务")
+        existing = data.get("transcription_job_id")
+        if existing and (config.JOBS_DIR / existing / "job.json").is_file():
+            return jobs.Job.load(existing).data
+        rel = (result.get("files") or {}).get("media")
+        if not isinstance(rel, str):
+            raise HTTPException(409, "这条任务没有可转录的视频文件")
+        media = (source.dir / rel).resolve()
+        if source.dir.resolve() not in media.parents or not media.is_file() or media.suffix.lower() not in VIDEO_EXTS | AUDIO_EXTS:
+            raise HTTPException(409, "已下载的视频文件找不到了")
+        opts = config.Options.from_dict({**data.get("options", {}), "official_only": False,
+                                         "prefer_subtitles": False, "douyin_chrome": False,
+                                         "douyin_cookie_subtitles": False, "allow_thirdparty": False,
+                                         "keep_video": True})
+        job = jobs.Job.create(str(media), opts, "file")
+        target = job.dir / ("source_media" + media.suffix.lower())
+        try:
+            try:
+                os.link(media, target)
+            except OSError:
+                shutil.copy2(media, target)
+            job.update(input=str(target), runner="server", source_job_id=job_id,
+                       source_url=data.get("url"), source_title=data.get("title"),
+                       source_platform_label=data.get("platform_label"),
+                       source_platform_summary=result.get("platform_summary"))
+            source.update(transcription_job_id=job.id)
+            job.emit("job_queued", f"用任务 {job_id} 已下载的视频在本机转录，不重新下载")
+            _queue.put(job.id)
+        except Exception:
+            shutil.rmtree(job.dir, ignore_errors=True)
+            raise
+        return job.data
 
 
 @app.post("/api/jobs/{job_id}/reveal")

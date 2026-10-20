@@ -390,6 +390,10 @@
     badge.className = "badge " + job.status;
     badge.textContent = STATUS_TEXT[job.status] || job.status;
     $("retryBtn").hidden = !(job.status === "failed" || job.status === "done");
+    const canTranscribe = job.status === "done" && job.options?.official_only &&
+      job.result?.source === "platform_assets" && !job.result?.segments && job.result?.files?.media;
+    $("transcribeBtn").hidden = !canTranscribe;
+    $("transcribeBtn").textContent = job.transcription_job_id ? "查看转录任务" : "用已下载视频转录";
 
     const how = $("jobHow");
     if (job.result) {
@@ -607,6 +611,21 @@
     });
     openJob(job.id);
     loadHistory();
+  });
+  $("transcribeBtn").addEventListener("click", async () => {
+    if (!state.jobId) return;
+    const button = $("transcribeBtn");
+    button.disabled = true;
+    try {
+      const job = await api(`/api/jobs/${state.jobId}/transcribe`, { method: "POST" });
+      openJob(job.id);
+      loadHistory();
+    } catch (e) {
+      $("connWarn").textContent = "⚠️ 转录没开始：" + e.message;
+      $("connWarn").hidden = false;
+    } finally {
+      button.disabled = false;
+    }
   });
 
   // ---------------------------------------------------------------- 历史

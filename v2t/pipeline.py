@@ -224,10 +224,17 @@ def _resolve_file(ctx: Ctx) -> None:
         if not info["has_audio"]:
             raise StepFailed("这个文件里没有声音，没法转文字")
         ctx.media_path = path
-        ctx.media_how = "本地文件"
-        ctx.info.update(title=path.stem, duration=info["duration"])
-        job.update(platform="local", platform_label="本地文件", title=path.stem, duration=info["duration"])
-        st.summary(f"本地文件 {path.name}，时长 {human_duration(info['duration'])}")
+        from_download = bool(job.data.get("source_job_id"))
+        ctx.media_how = "已经下载到本机的视频" if from_download else "本地文件"
+        ctx.media_label = "已下载视频" if from_download else "本地文件"
+        ctx.url = job.data.get("source_url") if from_download else None
+        ctx.info.update(title=job.data.get("source_title") or path.stem, duration=info["duration"])
+        if from_download:
+            ctx.info["platform_summary"] = job.data.get("source_platform_summary")
+        job.update(platform="local", platform_label=job.data.get("source_platform_label") or "本地文件",
+                   title=ctx.info["title"], duration=info["duration"])
+        st.summary(("复用已下载的视频" if from_download else f"本地文件 {path.name}") +
+                   f"，时长 {human_duration(info['duration'])}")
 
 
 def _resolve_url(ctx: Ctx) -> None:
@@ -477,7 +484,9 @@ def _write_outputs(ctx: Ctx, elapsed: float) -> None:
             w = ctx.info["whisper"]
             segments, language = w["segments"], w["language"]
             model = config.WHISPER_MODEL.split("/")[-1]
-            if job.data["input_type"] == "file":
+            if job.data.get("source_job_id"):
+                how = f"复用已下载的视频 → 本机 Whisper 转录（{model}），没有重新下载"
+            elif job.data["input_type"] == "file":
                 how = f"本机文件「{Path(job.data['input']).name}」→ 本机 Whisper 转写（{model}）"
             else:
                 how = f"视频通过「{ctx.media_how}」拿到 → 本机 Whisper 转写（{model}）"

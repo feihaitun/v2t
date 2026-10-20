@@ -103,6 +103,7 @@
         <div class="job-actions">
           <span id="jobStatus" class="badge"></span>
           <button id="retryBtn" class="ghost" hidden>重试</button>
+          <button id="transcribeBtn" class="ghost" hidden>用已下载视频转录</button>
           <button id="revealBtn" class="ghost">打开文件夹</button>
         </div>
       </div>
@@ -154,7 +155,7 @@
     <details class="card explainer" id="explainer">
       <summary>它是怎么工作的？（大白话）</summary>
       <div class="explain-body">
-        <p><b>从视频里拿文字，现在有两个来源：</b>平台现成的字幕、视频里的声音。现成字幕最快最准，所以永远第一个找；没有就把声音下载下来，在本机转成文字。（画面上印着的字暂时还不读。）</p>
+        <p><b>从视频里拿文字，现在有两个来源：</b>平台现成的字幕、视频里的声音。普通模式找不到平台字幕时，会在本机转录声音；「只下载平台原文件」模式会先停在视频结果，你可以点「用已下载视频转录」，不用重新下载。（画面上印着的字暂时还不读。）</p>
         <ol>
           <li><b>认链接</b>：看是哪个平台，短链接先展开，去掉分享人的跟踪参数。</li>
           <li><b>找现成字幕</b>：YouTube、小红书有现成字幕就直接用；B站默认转写；抖音可开启「使用已登录的 Chrome」，直接从真实浏览器页面查找字幕，没有就转写。勾选「下载完整视频」后，即使拿到原字幕，也会把视频一起下载。</li>
