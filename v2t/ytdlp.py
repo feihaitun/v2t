@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
+from http.cookiejar import Cookie
 from pathlib import Path
 
 from . import config
@@ -64,13 +65,14 @@ def explain_error(text: str) -> str:
 class _Logger:
     """把 yt-dlp Python API 的日志转进任务日志（开发模式可见）。"""
 
-    def __init__(self, attempt: AttemptCtx | None):
+    def __init__(self, attempt: AttemptCtx | None, sensitive: bool = False):
         self.attempt = attempt
+        self.sensitive = sensitive
         self.errors: list[str] = []
         self.warnings: list[str] = []
 
     def debug(self, msg: str) -> None:
-        if self.attempt and not msg.startswith("[debug] "):
+        if self.attempt and not self.sensitive and not msg.startswith("[debug] "):
             self.attempt.log(msg)
 
     def info(self, msg: str) -> None:
@@ -78,21 +80,43 @@ class _Logger:
 
     def warning(self, msg: str) -> None:
         self.warnings.append(msg)
-        if self.attempt:
+        if self.attempt and not self.sensitive:
             self.attempt.log("yt-dlp 警告：" + msg, level="debug")
 
     def error(self, msg: str) -> None:
         self.errors.append(msg)
-        if self.attempt:
+        if self.attempt and not self.sensitive:
             self.attempt.log(msg, level="debug")
 
 
+def _put_cookies_in_memory(ydl, cookies: list[dict]) -> None:
+    """只把当前站点的 Cookie 放进 yt-dlp 内存会话；不写 Cookie 文件。"""
+    for row in cookies:
+        domain = row["domain"]
+        expires = row.get("expires", -1)
+        ydl.cookiejar.set_cookie(Cookie(
+            version=0, name=row["name"], value=row["value"], port=None,
+            port_specified=False, domain=domain, domain_specified=domain.startswith("."),
+            domain_initial_dot=domain.startswith("."), path=row.get("path") or "/",
+            path_specified=True, secure=bool(row.get("secure")),
+            expires=int(expires) if expires and expires > 0 else None,
+            discard=not bool(expires and expires > 0), comment=None, comment_url=None,
+            rest={"HttpOnly": None} if row.get("httpOnly") else {}, rfc2109=False))
+
+
+def _auth_error(text: str) -> str:
+    for pattern, plain in _ERROR_MAP:
+        if re.search(pattern, text):
+            return plain
+    return "登录态下载暂时失败，请检查 Chrome 登录状态或稍后重试"
+
+
 def extract_info(url: str, attempt: AttemptCtx | None = None, cookies: Path | None = None,
-                 want_subs: bool = True) -> dict:
+                 want_subs: bool = True, site_cookies: list[dict] | None = None) -> dict:
     """只读信息不下载。失败抛 StrategyFailed（带大白话原因）。"""
     import yt_dlp
 
-    logger = _Logger(attempt)
+    logger = _Logger(attempt, sensitive=site_cookies is not None)
     opts = {
         "quiet": True,
         "no_warnings": False,
@@ -114,13 +138,18 @@ def extract_info(url: str, attempt: AttemptCtx | None = None, cookies: Path | No
     if cookies:
         opts["cookiefile"] = str(cookies)
     if attempt:
-        attempt.log(f"yt-dlp 读取视频信息：{url}" + ("（带访客 cookie）" if cookies else ""))
+        attempt.log("yt-dlp 从 Chrome 登录状态读取视频信息" if site_cookies is not None else
+                    f"yt-dlp 读取视频信息：{url}" + ("（带访客 cookie）" if cookies else ""))
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
+            if site_cookies is not None:
+                _put_cookies_in_memory(ydl, site_cookies)
             info = ydl.extract_info(url, download=False)
             info = ydl.sanitize_info(info)
     except Exception as exc:  # yt_dlp.utils.DownloadError 等
         text = str(exc) + "\n" + "\n".join(logger.errors)
+        if site_cookies is not None:
+            raise StrategyFailed(_auth_error(text)) from None
         raise StrategyFailed(explain_error(text), {"error": text[-1500:]}) from None
     if info.get("_type") == "playlist":
         raise StrategyFailed("这个链接是一个列表（频道 / 合集 / 播放列表），不是单个视频，请贴单个视频的链接", final=True)
@@ -131,6 +160,8 @@ def extract_info(url: str, attempt: AttemptCtx | None = None, cookies: Path | No
     if not has_subs and not has_formats and logger.warnings:
         # 格式和字幕都没拿到：把 yt-dlp 的警告翻译出来当原因（比如要登录、视频不存在）
         text = "\n".join(logger.warnings)
+        if site_cookies is not None:
+            raise StrategyFailed(_auth_error(text))
         raise StrategyFailed(explain_error(text), {"error": text[-1500:]})
     info["_v2t_warnings"] = list(logger.warnings)
     return info
@@ -200,7 +231,7 @@ def pick_subtitle(info: dict, want_lang: str = "auto") -> dict | None:
 
 
 def download_subtitle(info: dict, choice: dict, out_dir: Path, attempt: AttemptCtx,
-                      cookies: Path | None = None) -> Path:
+                      cookies: Path | None = None, site_cookies: list[dict] | None = None) -> Path:
     """用 yt-dlp 自己的网络会话下载字幕（带上它需要的请求头 / cookie）。"""
     import yt_dlp
 
@@ -213,7 +244,8 @@ def download_subtitle(info: dict, choice: dict, out_dir: Path, attempt: AttemptC
     safe_lang = re.sub(r"[^A-Za-z0-9_-]", "_", choice["lang"])[:40]
     path = out_dir / f"subtitle.{safe_lang}.{ext}"
     attempt.log(f"下载字幕轨道：{choice['lang']}（{'人工' if choice['kind'] == 'manual' else '自动'}字幕，格式 {ext}）")
-    opts = {"quiet": True, "socket_timeout": 20, "logger": _Logger(attempt), **js_runtime_opts()}
+    opts = {"quiet": True, "socket_timeout": 20,
+            "logger": _Logger(attempt, sensitive=site_cookies is not None), **js_runtime_opts()}
     if cookies:
         opts["cookiefile"] = str(cookies)
     try:
@@ -223,6 +255,8 @@ def download_subtitle(info: dict, choice: dict, out_dir: Path, attempt: AttemptC
             from yt_dlp.networking import Request
 
             with yt_dlp.YoutubeDL(opts) as ydl:
+                if site_cookies is not None:
+                    _put_cookies_in_memory(ydl, site_cookies)
                 extensions = {}
                 if fmt.get("impersonate"):  # 像 yt-dlp 自己下载时一样，模拟浏览器指纹
                     try:
@@ -235,16 +269,46 @@ def download_subtitle(info: dict, choice: dict, out_dir: Path, attempt: AttemptC
                 data = ydl.urlopen(Request(fmt["url"], headers=headers, extensions=extensions)).read()
             path.write_bytes(data)
     except Exception as exc:
+        if site_cookies is not None:
+            raise StrategyFailed(_auth_error(str(exc)), {"track": choice["lang"]}) from None
         raise StrategyFailed(explain_error(str(exc)), {"error": str(exc)[-800:], "track": choice["lang"]}) from None
     return path
 
 
 def download_media(url: str, out_dir: Path, attempt: AttemptCtx, cookies: Path | None = None,
                    keep_video: bool = False, audio_format: str = "ba[ext=m4a]/ba/b",
-                   extra_args: list[str] | None = None) -> Path:
+                   extra_args: list[str] | None = None, site_cookies: list[dict] | None = None) -> Path:
     """下载音频（或视频）。默认只要音频：文件小、下得快。"""
     out_dir.mkdir(parents=True, exist_ok=True)
     fmt = "bv*+ba/b" if keep_video else audio_format
+    if site_cookies is not None:
+        import yt_dlp
+
+        logger = _Logger(attempt, sensitive=True)
+        opts = {
+            "quiet": True, "no_warnings": False, "ignoreconfig": True,
+            "noplaylist": True, "playlist_items": "1", "format": fmt,
+            "outtmpl": str(out_dir / "media.%(ext)s"),
+            "merge_output_format": "mp4" if keep_video else None,
+            "writeinfojson": True, "writethumbnail": False,
+            "updatetime": False, "socket_timeout": 20, "retries": 3,
+            "sleep_interval_requests": 0.75, "ffmpeg_location": config.FFMPEG,
+            "logger": logger, **js_runtime_opts(),
+        }
+        attempt.log("yt-dlp 使用 Chrome 中当前站点的登录状态下载媒体；Cookie 只在本机内存中使用")
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                _put_cookies_in_memory(ydl, site_cookies)
+                code = ydl.download([url])
+        except Exception as exc:
+            raise StrategyFailed(_auth_error(str(exc) + "\n" + "\n".join(logger.errors))) from None
+        finally:
+            _shrink_info_json(out_dir)
+        media_exts = {".m4a", ".mp4", ".webm", ".mp3", ".aac", ".opus", ".ogg", ".flac", ".wav", ".mkv", ".mov", ".flv", ".m4s"}
+        files = [p for p in out_dir.glob("media.*") if p.suffix.lower() in media_exts and p.is_file()]
+        if code != 0 or not files:
+            raise StrategyFailed(_auth_error("\n".join(logger.errors + logger.warnings)))
+        return max(files, key=lambda p: p.stat().st_size)
     cmd = [
         # --ignore-config：不读你自己电脑上的 yt-dlp 配置（防止里面悄悄加了浏览器登录 cookie）
         config.PYTHON, "-I", "-m", "yt_dlp", "--ignore-config", "--no-cookies-from-browser",

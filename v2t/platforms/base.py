@@ -36,6 +36,7 @@ class Ctx:
     media_strategy: str | None = None
     media_label: str | None = None                    # 成功的那种办法的中文名
     subtitle: dict | None = None                      # {segments, language, kind, how}
+    subtitle_tracks: list[dict] = field(default_factory=list)  # 原文件模式：中英文各一条平台字幕
     visitor_cookies: Path | None = None
     chrome_capture: dict | None = field(default=None, repr=False)  # 仅内存；不写入任务记录
 

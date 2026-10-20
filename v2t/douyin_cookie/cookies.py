@@ -1,4 +1,4 @@
-"""只读 Chrome 中 douyin.com 的 Cookie；不复制整库、不导出值、不改变登录状态。
+"""只读 Chrome 中指定站点的 Cookie；不复制整库、不导出值、不改变登录状态。
 
 只使用 yt-dlp 的解密器处理匹配到的行，避免其通用导出函数读取所有站点。
 Chrome 时间戳是自 1601 年起的微秒，传给 Playwright 前转换为 Unix 秒。
@@ -35,7 +35,7 @@ def chrome_root() -> Path:
 
 def load_cookies(profile: str = "", *, root: Path | None = None, decryptor_factory=None,
                  domain: str = "douyin.com", login_names: set[str] | None = None) -> list[dict]:
-    if domain not in {"douyin.com", "bilibili.com"}:
+    if domain not in {"douyin.com", "bilibili.com", "youtube.com"}:
         raise CookieUnavailable("bad_profile")
     login_names = login_names or LOGIN_NAMES
     root = root or chrome_root()

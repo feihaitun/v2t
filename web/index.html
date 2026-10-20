@@ -70,7 +70,7 @@
           <label class="check"><input type="checkbox" id="optSubs" checked> 有现成字幕就直接用（更快更准）</label>
           <label class="check"><input type="checkbox" id="optKeep"> 下载完整视频（默认只要音频）</label>
           <label class="check"><input type="checkbox" id="optOfficial"> 只下载平台字幕源文件和完整视频，不转录
-            <span class="muted">（目前支持抖音和 B站；没有原字幕就只交付视频）</span></label>
+            <span class="muted">（支持抖音、B站和 YouTube；B站和 YouTube 优先用 Chrome 登录状态，分别保存可用的中英文字幕；没有原字幕就只交付视频）</span></label>
           <label class="check"><input type="checkbox" id="optThird"> 允许用第三方解析网站兜底
             <span class="muted">（会把链接发给别人的网站，默认关）</span></label>
           <label class="wide">专业词提示（人名、术语，用逗号隔开，能减少同音错字）
@@ -158,13 +158,13 @@
         <p><b>从视频里拿文字，现在有两个来源：</b>平台现成的字幕、视频里的声音。普通模式找不到平台字幕时，会在本机转录声音；「只下载平台原文件」模式会先停在视频结果，你可以点「用已下载视频转录」，不用重新下载。（画面上印着的字暂时还不读。）</p>
         <ol>
           <li><b>认链接</b>：看是哪个平台，短链接先展开，去掉分享人的跟踪参数。</li>
-          <li><b>找现成字幕</b>：YouTube、小红书有现成字幕就直接用；B站默认转写；抖音可开启「使用已登录的 Chrome」，直接从真实浏览器页面查找字幕，没有就转写。勾选「下载完整视频」后，即使拿到原字幕，也会把视频一起下载。</li>
+          <li><b>找现成字幕</b>：普通模式先查平台字幕，找不到再转写。原文件模式下，YouTube 和 B站优先使用 Chrome 登录状态查找中英文字幕，分别保存平台原文件；抖音可开启专用的 Chrome 连接器。找到字幕后仍会下载完整视频。</li>
           <li><b>拿视频/音频</b>：每个平台按「从快到稳」的顺序试几种办法，前一种失败就自动换下一种。你这个链接具体会试哪几种，上面「预计步骤」里写着：
             <ul>
               <li><b>抖音</b>：专用浏览器（从不登录）打开视频页，让页面自己去要视频地址 → 换一个全新的访客身份再试 → yt-dlp（备用，目前无效）→ 第三方解析网站（默认关闭）</li>
               <li><b>小红书</b>：用「手机版网页」读视频地址（不登录、不带 cookie）→ 模拟 iPhone 的浏览器 → yt-dlp</li>
-              <li><b>B站</b>：yt-dlp 只下载音频（不带 cookie）→ 真浏览器从页面数据里找音频地址</li>
-              <li><b>YouTube</b>：yt-dlp 直接下载 → 换「嵌入播放器」通道 → 等一会儿再试</li>
+              <li><b>B站</b>：原文件模式先用 Chrome 登录状态下载视频，再试访客下载；普通模式先访客下载音频</li>
+              <li><b>YouTube</b>：原文件模式先用 Chrome 登录状态下载视频，再试访客下载；普通模式使用访客下载</li>
             </ul>
           </li>
           <li><b>抽音频</b>：ffmpeg 把声音抽出来。</li>

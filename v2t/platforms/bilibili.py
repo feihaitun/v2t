@@ -64,41 +64,49 @@ class BiliChromeSubtitles(Strategy):
                 if not tracks:
                     reason = "B站要求登录才能查看字幕" if body.get("need_login_subtitle") else "这个视频没有返回平台字幕"
                     raise StrategyFailed(reason, expected=True)
-                want = ctx.options.language
-                choices = [t for t in tracks if want == "auto" or
-                           str(t.get("lan", "")).replace("ai-", "").split("-")[0] == want.split("-")[0]]
-                choices.sort(key=lambda t: (not str(t.get("lan", "")).startswith("zh"),
-                                            str(t.get("lan", "")).startswith("ai-")))
-                for track in choices:
-                    url = track.get("subtitle_url") or ""
-                    if url.startswith("//"):
-                        url = "https:" + url
-                    parsed = urlparse(url)
-                    host = parsed.hostname or ""
-                    if (parsed.scheme != "https" or parsed.username or parsed.password or
-                            not (host == "hdslb.com" or host.endswith(".hdslb.com") or
-                                 host == "bilibili.com" or host.endswith(".bilibili.com"))):
-                        continue
-                    response = client.get(url)
-                    if response.status_code != 200 or len(response.content) > 2_000_000:
-                        continue
-                    raw = response.json()
-                    if not isinstance(raw, dict):
-                        continue
-                    lines = raw.get("body") or []
-                    segments = valid_segments([{"start": x.get("from"), "end": x.get("to"),
-                                                "text": x.get("content")} for x in lines if isinstance(x, dict)])
-                    if not segments:
-                        continue
-                    lang = str(track.get("lan") or "und")
-                    safe_lang = re.sub(r"[^a-zA-Z0-9_-]", "_", lang)[:30]
-                    path = ctx.workdir / f"subtitle.platform.{safe_lang}.json"
-                    path.write_bytes(response.content)
+                requested = ctx.options.language.split("-")[0]
+                languages = ([requested] if requested not in ("auto", "zh", "en") else []) + (
+                    ["en", "zh"] if requested == "en" else ["zh", "en"])
+                found = []
+                for language in languages:
+                    choices = [t for t in tracks if
+                               str(t.get("lan", "")).replace("ai-", "").split("-")[0] == language]
+                    choices.sort(key=lambda t: str(t.get("lan", "")).startswith("ai-"))
+                    for track in choices:
+                        url = track.get("subtitle_url") or ""
+                        if url.startswith("//"):
+                            url = "https:" + url
+                        parsed = urlparse(url)
+                        host = parsed.hostname or ""
+                        if (parsed.scheme != "https" or parsed.username or parsed.password or
+                                not (host == "hdslb.com" or host.endswith(".hdslb.com") or
+                                     host == "bilibili.com" or host.endswith(".bilibili.com"))):
+                            continue
+                        response = client.get(url)
+                        if response.status_code != 200 or len(response.content) > 2_000_000:
+                            continue
+                        raw = response.json()
+                        if not isinstance(raw, dict):
+                            continue
+                        lines = raw.get("body") or []
+                        segments = valid_segments([{"start": x.get("from"), "end": x.get("to"),
+                                                    "text": x.get("content")} for x in lines if isinstance(x, dict)])
+                        if not segments:
+                            continue
+                        lang = str(track.get("lan") or "und")
+                        safe_lang = re.sub(r"[^a-zA-Z0-9_-]", "_", lang)[:30]
+                        path = ctx.workdir / f"subtitle.platform.{safe_lang}.json"
+                        path.write_bytes(response.content)
+                        found.append({"segments": segments, "language": language,
+                                      "kind": "auto" if lang.startswith("ai-") else "manual",
+                                      "how": f"B站平台字幕（{lang}）", "raw_file": path.name})
+                        break
+                if found:
                     ctx.remember_info({"title": video.get("title"), "duration": video.get("duration")})
-                    ctx.subtitle = {"segments": segments, "language": lang.replace("ai-", ""),
-                                    "kind": "platform", "how": f"B站平台字幕（{lang}）",
-                                    "raw_file": path.name}
-                    at.success(f"保存了 B站原始字幕 JSON：{len(segments)} 段")
+                    ctx.subtitle_tracks = found
+                    ctx.subtitle = found[0]
+                    at.success("保存了 B站原始字幕：" + "、".join(
+                        f"{t['language']} {len(t['segments'])} 段" for t in found))
                     return
         except StrategyFailed:
             raise
@@ -172,6 +180,29 @@ class BiliYtdlpAudio(Strategy):
         kind = "完整视频" if ctx.options.keep_video else "音频"
         ctx.media_how = f"yt-dlp 直接下载{kind}（没用任何 cookie）"
         at.success(f"下载好了：{path.name}（{path.stat().st_size / 1e6:.1f}MB）")
+
+
+class BiliChromeMedia(Strategy):
+    key = "bili_chrome_media"
+    label = "从 Chrome 登录状态下载 B站视频"
+    explain = "只读 Chrome 中 B站的登录 Cookie，在本机内存里交给 yt-dlp 下载完整视频。"
+    needs = "login"
+    option_flag = "official_only"
+
+    def run(self, ctx: Ctx, at: AttemptCtx) -> None:
+        from ..douyin_cookie.cookies import CookieUnavailable, load_cookies
+
+        try:
+            cookies = load_cookies(domain="bilibili.com", login_names={"SESSDATA"})
+        except CookieUnavailable:
+            raise StrategyFailed("Chrome 中没有可读取的 B站登录状态；接下来试访客下载", expected=True) from None
+        out = _dl_dir(ctx, self.key)
+        path = ytdlp.download_media(ctx.url, out, at, keep_video=True, site_cookies=cookies)
+        ctx.remember_info(ytdlp.read_info_json(out))
+        ensure_ok_media(path, at)
+        ctx.media_path, ctx.media_strategy = path, self.key
+        ctx.media_how = "用 Chrome 中 B站的登录状态下载完整视频"
+        at.success(f"下载好了完整视频：{path.stat().st_size / 1e6:.1f}MB")
 
 
 class Bilibili(Platform):

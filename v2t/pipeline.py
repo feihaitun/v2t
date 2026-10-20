@@ -65,7 +65,7 @@ def make_plan(raw: str, options: config.Options | None = None) -> dict:
 
     if kind == "file":
         if options.official_only:
-            raise ValueError("平台原文件模式需要 B站或抖音的视频链接")
+            raise ValueError("平台原文件模式需要 B站、抖音或 YouTube 的视频链接")
         info = {}
         try:
             info = probe(Path(value))
@@ -107,6 +107,9 @@ def subtitle_strategies(platform: Platform, options: config.Options) -> list:
     if platform.key == "bilibili" and options.official_only:
         from .platforms.bilibili import BiliChromeSubtitles
         return [BiliChromeSubtitles()]
+    if platform.key == "youtube" and options.official_only:
+        from .platforms.youtube import YouTubeChromeSubtitles, YouTubeGuestSubtitles
+        return [YouTubeChromeSubtitles(), YouTubeGuestSubtitles()]
     if platform.key == "douyin" and options.official_only:
         from .platforms.douyin import DouyinGuestSubtitles
         if options.douyin_chrome:
@@ -125,7 +128,11 @@ def subtitle_strategies(platform: Platform, options: config.Options) -> list:
 def media_strategies(platform: Platform, options: config.Options) -> list:
     strategies = platform.media_strategies()
     if platform.key == "bilibili" and options.official_only:
-        return strategies[:1]
+        from .platforms.bilibili import BiliChromeMedia
+        return [BiliChromeMedia(), strategies[0]]
+    if platform.key == "youtube" and options.official_only:
+        from .platforms.youtube import YouTubeChromeMedia
+        return [YouTubeChromeMedia(), *strategies]
     if platform.key == "douyin" and options.official_only:
         strategies = [s for s in strategies if s.key != "douyin_thirdparty"]
     if platform.key == "douyin" and options.douyin_chrome:
@@ -153,14 +160,14 @@ def run_job(job: Job) -> Job:
         kind = job.data["input_type"]
         if kind == "file":
             if options.official_only:
-                raise StepFailed("平台原文件模式需要 B站或抖音的视频链接")
+                raise StepFailed("平台原文件模式需要 B站、抖音或 YouTube 的视频链接")
             _resolve_file(ctx)
             job.skip_step("subtitles", "本地文件没有平台字幕")
             job.skip_step("media", "文件已经在本机，不用下载")
         else:
             _resolve_url(ctx)
-            if options.official_only and ctx.platform.key not in ("bilibili", "douyin"):
-                raise StepFailed("平台原字幕和完整视频模式目前支持 B站与抖音")
+            if options.official_only and ctx.platform.key not in ("bilibili", "douyin", "youtube"):
+                raise StepFailed("平台原字幕和完整视频模式目前支持 B站、抖音和 YouTube")
             _find_subtitles(ctx)
             if options.official_only:
                 try:
@@ -501,6 +508,18 @@ def _write_outputs(ctx: Ctx, elapsed: float) -> None:
         files = write_all(ctx.workdir, segments, meta)
         if ctx.subtitle and ctx.subtitle.get("raw_file"):
             files["platform_subtitle"] = ctx.subtitle["raw_file"]
+        caption_tracks = []
+        for track in ctx.subtitle_tracks:
+            lang = track["language"]
+            safe_lang = re.sub(r"[^A-Za-z0-9_-]", "_", str(lang))[:30] or "und"
+            folder = ctx.workdir / "captions" / safe_lang
+            folder.mkdir(parents=True, exist_ok=True)
+            track_files = write_all(folder, track["segments"],
+                                    {**meta, "language": lang, "how": track["how"]})
+            caption_tracks.append({"language": lang, "kind": track["kind"],
+                                   "raw_file": track.get("raw_file"),
+                                   "files": {key: str((folder / name).relative_to(ctx.workdir))
+                                             for key, name in track_files.items()}})
         extra = {}
         if ctx.media_path and ctx.media_path.exists() and ctx.workdir in ctx.media_path.parents:
             extra["media"] = str(ctx.media_path.relative_to(ctx.workdir))  # 网页上点时间戳可以直接播放
@@ -510,6 +529,7 @@ def _write_outputs(ctx: Ctx, elapsed: float) -> None:
             "language_label": lang_name(language), "segments": len(segments), "chars": chars,
             "files": files | extra, "media_strategy": ctx.media_strategy,
             "platform_summary": ctx.info.get("platform_summary"),
+            "caption_tracks": caption_tracks,
         })
         st.summary(f"写好了 md / srt / txt / json：{len(segments)} 段，{chars} 字" +
                    ("；另保存了平台原字幕" if files.get("platform_subtitle") else ""))

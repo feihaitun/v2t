@@ -531,8 +531,18 @@
     $("resultStats").textContent = `（${job.result.language_label}，${job.result.segments} 段，${job.result.chars} 字）`;
     const links = ["md", "srt", "txt", "json"].filter((k) => files[k]).map((k) =>
       h("a", { href: base + files[k], download: files[k] }, "下载 " + k));
-    if (files.platform_subtitle) links.unshift(h("a", { href: base + files.platform_subtitle,
+    if (files.platform_subtitle && !(job.result.caption_tracks || []).length) links.unshift(h("a", { href: base + files.platform_subtitle,
       download: files.platform_subtitle }, "下载平台原字幕"));
+    for (const track of job.result.caption_tracks || []) {
+      const lang = track.language === "zh" ? "中文" : track.language === "en" ? "英文" : track.language;
+      const kind = track.kind === "translated" ? "平台机翻" : track.kind === "auto" ? "平台自动" : "人工";
+      if (track.raw_file) links.push(h("a", { href: base + track.raw_file,
+        download: track.raw_file }, `下载${lang}平台字幕源文件（${kind}）`));
+      for (const ext of ["srt", "txt"]) {
+        const file = track.files?.[ext];
+        if (file) links.push(h("a", { href: base + file, download: `${lang}.${ext}` }, `下载${lang} ${ext.toUpperCase()}`));
+      }
+    }
     if (files.media) links.push(mediaLink());
     $("downloads").replaceChildren(...links);
 
