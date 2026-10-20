@@ -45,8 +45,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"❌ {exc}")
         return 2
     options = config.Options(
-        language=args.lang, prefer_subtitles=not args.no_subs, allow_thirdparty=args.thirdparty,
-        keep_video=args.keep_video, initial_prompt=args.prompt or "", headed_browser=args.headed,
+        language=args.lang, prefer_subtitles=args.official_only or not args.no_subs,
+        allow_thirdparty=args.thirdparty,
+        keep_video=args.official_only or args.keep_video, official_only=args.official_only,
+        initial_prompt=args.prompt or "", headed_browser=args.headed,
         douyin_cookie_subtitles=args.douyin_cookie_subtitles, douyin_cookie_profile=args.douyin_cookie_profile,
     )
     job = jobs.Job.create(value, options, kind)
@@ -61,8 +63,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(json.dumps(job.data, ensure_ascii=False, indent=2))
     if job.data["status"] == "done":
         files = job.data["result"]["files"]
-        print("\n文字稿：")
-        for key in ("md", "txt", "srt", "json"):
+        print("\n结果文件：")
+        for key in ("platform_subtitle", "media", "md", "txt", "srt", "json"):
             if key in files:
                 print(f"  {key:4} {job.dir / files[key]}")
         return 0
@@ -134,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-subs", action="store_true", help="不用平台字幕，强制下载转写")
     p.add_argument("--thirdparty", action="store_true", help="允许用第三方解析网站兜底")
     p.add_argument("--keep-video", action="store_true", help="下载完整视频（默认只要音频）")
+    p.add_argument("--official-only", action="store_true", help="只下载平台原字幕和完整视频，不运行 Whisper")
     p.add_argument("--prompt", help="给 Whisper 的提示词：人名、专业词")
     p.add_argument("--headed", action="store_true", help="浏览器步骤显示窗口（调试用）")
     p.add_argument("--dev", action="store_true", help="开发模式：打印所有命令和原始输出")

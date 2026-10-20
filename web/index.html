@@ -69,6 +69,8 @@
           </label>
           <label class="check"><input type="checkbox" id="optSubs" checked> 有现成字幕就直接用（更快更准）</label>
           <label class="check"><input type="checkbox" id="optKeep"> 下载完整视频（默认只要音频）</label>
+          <label class="check"><input type="checkbox" id="optOfficial"> 只下载平台字幕源文件和完整视频，不转录
+            <span class="muted">（目前支持抖音和 B站；没有原字幕就只交付视频）</span></label>
           <label class="check"><input type="checkbox" id="optThird"> 允许用第三方解析网站兜底
             <span class="muted">（会把链接发给别人的网站，默认关）</span></label>
           <label class="wide">专业词提示（人名、术语，用逗号隔开，能减少同音错字）
@@ -131,7 +133,7 @@
 
       <div id="resultBox" class="result" hidden>
         <div class="result-head">
-          <div class="section-title">文字稿 <span id="resultStats" class="muted small"></span></div>
+          <div class="section-title"><span id="resultTitle">文字稿</span> <span id="resultStats" class="muted small"></span></div>
           <div class="result-actions">
             <button id="copyBtn" class="ghost">复制全文</button>
             <span id="downloads" class="downloads"></span>

@@ -33,7 +33,11 @@ def chrome_root() -> Path:
     return Path.home() / "Library/Application Support/Google/Chrome"
 
 
-def load_cookies(profile: str = "", *, root: Path | None = None, decryptor_factory=None) -> list[dict]:
+def load_cookies(profile: str = "", *, root: Path | None = None, decryptor_factory=None,
+                 domain: str = "douyin.com", login_names: set[str] | None = None) -> list[dict]:
+    if domain not in {"douyin.com", "bilibili.com"}:
+        raise CookieUnavailable("bad_profile")
+    login_names = login_names or LOGIN_NAMES
     root = root or chrome_root()
     if not root.is_dir():
         raise CookieUnavailable("no_browser")
@@ -59,7 +63,7 @@ def load_cookies(profile: str = "", *, root: Path | None = None, decryptor_facto
             # 不选择其他站点的 Cookie 行；不会读取它们的明文或密文值。
             rows = con.execute("""SELECT host_key, name, value, encrypted_value, path,
                 expires_utc, is_secure, is_httponly, samesite FROM cookies
-                WHERE host_key='douyin.com' OR host_key LIKE '%.douyin.com'""").fetchall()
+                WHERE host_key=? OR host_key LIKE ?""", (domain, '%.' + domain)).fetchall()
         finally:
             con.close()
         decryptor = None
@@ -85,7 +89,7 @@ def load_cookies(profile: str = "", *, root: Path | None = None, decryptor_facto
             if samesite in (0, 1, 2):
                 cookie["sameSite"] = {0: "None", 1: "Lax", 2: "Strict"}[samesite]
             result.append(cookie)
-        if not any(c["name"] in LOGIN_NAMES for c in result):
+        if not any(c["name"] in login_names for c in result):
             raise CookieUnavailable("no_login")
         return result
     except CookieUnavailable:

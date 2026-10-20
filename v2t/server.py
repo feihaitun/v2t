@@ -119,10 +119,12 @@ def api_doctor(refresh: int = 0) -> dict:
 
 @app.get("/api/plan")
 def api_plan(input: str, prefer_subtitles: bool = True, allow_thirdparty: bool = False,
-             douyin_cookie_subtitles: bool = False, douyin_chrome: bool = False, keep_video: bool = False) -> dict:
-    opts = config.Options(prefer_subtitles=prefer_subtitles, allow_thirdparty=allow_thirdparty,
-                          douyin_cookie_subtitles=douyin_cookie_subtitles,
-                          douyin_chrome=douyin_chrome, keep_video=keep_video)
+             douyin_cookie_subtitles: bool = False, douyin_chrome: bool = False, keep_video: bool = False,
+             official_only: bool = False) -> dict:
+    opts = config.Options.from_dict({"prefer_subtitles": prefer_subtitles, "allow_thirdparty": allow_thirdparty,
+                                     "douyin_cookie_subtitles": douyin_cookie_subtitles,
+                                     "douyin_chrome": douyin_chrome, "keep_video": keep_video,
+                                     "official_only": official_only})
     try:
         return make_plan(input, opts)
     except ValueError as exc:

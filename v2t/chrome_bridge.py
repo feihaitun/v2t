@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import math
+import json
+import re
 import secrets
 import subprocess
 import threading
@@ -178,14 +180,28 @@ class ChromeSubtitles(Strategy):
                 continue
             try:
                 content = track.get('data')
+                raw_bytes = None
                 if content is None:
-                    content = b''.join(fetch(track['url'], 2_000_000)).decode('utf-8-sig')
+                    raw_bytes = b''.join(fetch(track['url'], 2_000_000))
+                    content = raw_bytes.decode('utf-8-sig')
                 segments = parse_payload(content)
             except Exception:
                 continue
             if segments:
+                raw_file = None
+                if ctx.options.official_only:
+                    if raw_bytes is None:
+                        raw_bytes = json.dumps(content, ensure_ascii=False).encode('utf-8')
+                    ext = 'json'
+                    if isinstance(content, str):
+                        ext = 'vtt' if content.lstrip().startswith('WEBVTT') else (
+                            'srt' if '-->' in content else 'json')
+                    safe_lang = re.sub(r'[^a-zA-Z0-9_-]', '_', track['language'])[:30]
+                    path = ctx.workdir / f'subtitle.platform.{safe_lang}.{ext}'
+                    path.write_bytes(raw_bytes)
+                    raw_file = path.name
                 ctx.subtitle = {'segments': segments, 'language': track['language'], 'kind': 'platform',
-                                'how': '抖音平台字幕（从已登录的 Chrome 获取）'}
+                                'how': '抖音平台字幕（从已登录的 Chrome 获取）', 'raw_file': raw_file}
                 at.success(f'拿到平台字幕：{len(segments)} 段')
                 return
         raise StrategyFailed('Chrome 已交回视频资料，但没有可用字幕 → 接下来下载并在本机转写', expected=True)

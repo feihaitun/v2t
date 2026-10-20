@@ -100,12 +100,37 @@
   // 登录状态留在 Chrome，网页只保存这个功能的开关偏好。
   $("optDouyinChrome").checked = load("v2t.douyinChrome") === "1";
   $("optKeep").checked = load("v2t.keepVideo") === "1";
+  $("optOfficial").checked = load("v2t.officialOnly") === "1";
+  let priorOfficialOptions = null;
+  function syncOfficialOption() {
+    const on = $("optOfficial").checked;
+    if (on) {
+      if (!priorOfficialOptions) priorOfficialOptions = { subs: $("optSubs").checked, keep: $("optKeep").checked };
+      $("optSubs").checked = true;
+      $("optKeep").checked = true;
+    } else if (priorOfficialOptions) {
+      $("optSubs").checked = priorOfficialOptions.subs;
+      $("optKeep").checked = priorOfficialOptions.keep;
+      priorOfficialOptions = null;
+    }
+    $("optSubs").disabled = on;
+    $("optKeep").disabled = on;
+    $("optThird").disabled = on;
+    $("startBtn").textContent = on ? "下载平台原字幕和视频" :
+      $("optKeep").checked ? "开始下载视频和字幕" : "开始转文字";
+  }
+  $("optOfficial").addEventListener("change", () => {
+    store("v2t.officialOnly", $("optOfficial").checked ? "1" : "0");
+    syncOfficialOption(); renderChromeOption(); schedulePlan();
+  });
+  syncOfficialOption();
   let chromeConnected = false;
   async function renderChromeOption() {
     const on = $("optDouyinChrome").checked;
     $("chromeSettings").hidden = !on;
     $("chromeHint").textContent = on
-      ? "已开启：直接从正常登录的 Chrome 取视频和字幕；没有原字幕就自动在本机转写。"
+      ? ($("optOfficial").checked ? "已开启：从正常登录的 Chrome 查抖音原字幕；没有原字幕也不会转录。" :
+        "已开启：直接从正常登录的 Chrome 取视频和字幕；没有原字幕就自动在本机转写。")
       : "已关闭：按原来的访客流程处理，不访问已登录的 Chrome。";
     if (!on) return;
     try {
@@ -119,10 +144,10 @@
   });
   $("optKeep").addEventListener("change", () => {
     store("v2t.keepVideo", $("optKeep").checked ? "1" : "0");
-    $("startBtn").textContent = $("optKeep").checked ? "开始下载视频和字幕" : "开始转文字";
+    syncOfficialOption();
     schedulePlan();
   });
-  $("startBtn").textContent = $("optKeep").checked ? "开始下载视频和字幕" : "开始转文字";
+  syncOfficialOption();
   $("openChromeBtn").addEventListener("click", () => api("/api/chrome/open", {method:"POST"}).catch(e => { $("chromeStatus").textContent=e.message; }));
   $("chromeFolderBtn").addEventListener("click", () => api("/api/chrome/folder", {method:"POST"}).catch(e => { $("chromeStatus").textContent=e.message; }));
   setInterval(() => { if ($("optDouyinChrome").checked) renderChromeOption(); }, 3000);
@@ -137,6 +162,7 @@
       douyin_cookie_subtitles: false,
       douyin_cookie_profile: "",
       keep_video: $("optKeep").checked,
+      official_only: $("optOfficial").checked,
       allow_thirdparty: $("optThird").checked,
       initial_prompt: $("optPrompt").value,
       headed_browser: state.dev && $("optHeaded").checked,
@@ -161,6 +187,7 @@
       const plan = await api("/api/plan?" + new URLSearchParams({
         input: v, prefer_subtitles: o.prefer_subtitles, allow_thirdparty: o.allow_thirdparty,
         douyin_chrome: o.douyin_chrome, keep_video: o.keep_video,
+        official_only: o.official_only,
       }));
       renderPlan(plan);
       $("startBtn").disabled = false;
@@ -448,6 +475,34 @@
     state.resultFor = id;
     const files = job.result.files || {};
     const base = `/api/jobs/${id}/files/`;
+    const mediaLink = () => {
+      if (!files.media) return null;
+      const ext = files.media.split(".").pop();
+      const isVideo = /^(mp4|mov|webm|mkv|m4v)$/i.test(ext);
+      const name = `${(job.title || "media").replace(/[\\/:*?"<>|#\s]+/g, "_").slice(0, 60)}.${ext}`;
+      return h("a", { href: base + files.media, download: name }, isVideo ? "下载视频" : "下载音频");
+    };
+    $("resultTitle").textContent = job.options?.official_only ? "平台原文件" : "文字稿";
+    if (!files.json && job.options?.official_only) {
+      state.segments = [];
+      state.plain = "";
+      $("copyBtn").hidden = true;
+      document.querySelector("#resultBox .tabs").hidden = true;
+      $("tabPlain").hidden = false;
+      $("tabSegments").hidden = true;
+      $("tabRaw").hidden = true;
+      $("resultStats").textContent = "";
+      $("downloads").replaceChildren(...[mediaLink()].filter(Boolean));
+      $("tabPlain").textContent = job.result.how;
+      $("tabSegments").replaceChildren();
+      $("playerWrap").replaceChildren();
+      $("playerWrap").hidden = !files.media;
+      if (files.media) $("playerWrap").append(h("video", { controls: true, preload: "metadata", src: base + files.media }));
+      $("resultBox").hidden = false;
+      return;
+    }
+    $("copyBtn").hidden = false;
+    document.querySelector("#resultBox .tabs").hidden = false;
     let data;
     let plain = "";
     try {
@@ -472,13 +527,9 @@
     $("resultStats").textContent = `（${job.result.language_label}，${job.result.segments} 段，${job.result.chars} 字）`;
     const links = ["md", "srt", "txt", "json"].filter((k) => files[k]).map((k) =>
       h("a", { href: base + files[k], download: files[k] }, "下载 " + k));
-    if (files.media) {
-      // 下载下来的原始音频（或视频），文件名用视频标题
-      const ext = files.media.split(".").pop();
-      const isVideo = /^(mp4|mov|webm|mkv|m4v)$/i.test(ext);
-      const name = `${(job.title || "media").replace(/[\\/:*?"<>|#\s]+/g, "_").slice(0, 60)}.${ext}`;
-      links.push(h("a", { href: base + files.media, download: name }, isVideo ? "下载视频" : "下载音频"));
-    }
+    if (files.platform_subtitle) links.unshift(h("a", { href: base + files.platform_subtitle,
+      download: files.platform_subtitle }, "下载平台原字幕"));
+    if (files.media) links.push(mediaLink());
     $("downloads").replaceChildren(...links);
 
     const wrap = $("playerWrap");
@@ -551,6 +602,7 @@
         douyin_cookie_profile: "",
         prefer_subtitles: $("optSubs").checked,
         keep_video: $("optKeep").checked,
+        official_only: $("optOfficial").checked,
       } }),
     });
     openJob(job.id);

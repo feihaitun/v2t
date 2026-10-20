@@ -1,8 +1,8 @@
 """B站：实测（2026-10-11）结论 ——
 
 - 下载音频不需要任何 cookie：yt-dlp 直接就能拿到全部音轨；
-- CC 字幕 / AI 字幕必须登录（SESSDATA）才给，访客 cookie 没用。我们不登录，所以 B 站一律走「下载音频 + 本机转写」，
-  但会告诉你「这个视频其实有字幕，只是要登录」；
+- CC 字幕 / AI 字幕必须登录（SESSDATA）才给，访客 cookie 没用。普通模式仍走访客下载与本机转写；
+  用户明确开启原文件模式时，只读 Chrome 中 B站域名的登录 Cookie，保存平台原始字幕 JSON；
 - 浏览器兜底：页面里的 window.__playinfo__ 有音频地址，下载时必须带 Referer: https://www.bilibili.com/（不带会 403）；
 - b23.tv 短链接普通 HTTP 就能展开，但跳转地址里带着分享人的跟踪参数（buvid、mid），不记录、直接去掉。
 """
@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
 
 import httpx
 
@@ -17,6 +18,93 @@ from .. import config, ytdlp
 from ..jobs import AttemptCtx, StrategyFailed
 from .base import Ctx, Platform, Strategy, ensure_ok_media
 from .common import BrowserGrab, _dl_dir
+
+
+class BiliChromeSubtitles(Strategy):
+    key = "bili_chrome_subtitles"
+    label = "从 Chrome 登录状态取 B站原字幕"
+    explain = "只读 Chrome 中 B站的登录 Cookie，向 B站查询字幕并保存平台返回的原始 JSON。"
+    needs = "login"
+    option_flag = "official_only"
+
+    def run(self, ctx: Ctx, at: AttemptCtx) -> None:
+        from ..douyin_cookie.cookies import CookieUnavailable, load_cookies
+        from ..douyin_cookie.tracks import valid_segments
+
+        try:
+            cookies = load_cookies(domain="bilibili.com", login_names={"SESSDATA"})
+        except CookieUnavailable:
+            raise StrategyFailed("Chrome 中没有可读取的 B站登录状态，请先在 Chrome 登录 B站", expected=True) from None
+        jar = httpx.Cookies()
+        for cookie in cookies:
+            jar.set(cookie["name"], cookie["value"], domain=cookie["domain"], path=cookie["path"])
+        headers = {"User-Agent": config.DESKTOP_UA, "Referer": ctx.url or "https://www.bilibili.com/"}
+        try:
+            with httpx.Client(cookies=jar, headers=headers, timeout=20, trust_env=False,
+                              follow_redirects=False) as client:
+                view = client.get("https://api.bilibili.com/x/web-interface/view", params={"bvid": ctx.video_id})
+                view.raise_for_status()
+                payload = view.json()
+                if payload.get("code") != 0:
+                    raise StrategyFailed("B站没有交回视频页资料", expected=True)
+                video = payload.get("data") or {}
+                pages = video.get("pages") or []
+                part = int(httpx.URL(ctx.url).params.get("p") or 1)
+                if part < 1 or part > len(pages):
+                    raise StrategyFailed("B站视频分 P 编号无效", final=True)
+                cid = pages[part - 1].get("cid")
+                reply = client.get("https://api.bilibili.com/x/player/wbi/v2",
+                                   params={"bvid": ctx.video_id, "cid": cid})
+                reply.raise_for_status()
+                data = reply.json()
+                if data.get("code") != 0:
+                    raise StrategyFailed("B站没有交回字幕列表", expected=True)
+                body = data.get("data") or {}
+                tracks = ((body.get("subtitle") or {}).get("subtitles") or [])
+                if not tracks:
+                    reason = "B站要求登录才能查看字幕" if body.get("need_login_subtitle") else "这个视频没有返回平台字幕"
+                    raise StrategyFailed(reason, expected=True)
+                want = ctx.options.language
+                choices = [t for t in tracks if want == "auto" or
+                           str(t.get("lan", "")).replace("ai-", "").split("-")[0] == want.split("-")[0]]
+                choices.sort(key=lambda t: (not str(t.get("lan", "")).startswith("zh"),
+                                            str(t.get("lan", "")).startswith("ai-")))
+                for track in choices:
+                    url = track.get("subtitle_url") or ""
+                    if url.startswith("//"):
+                        url = "https:" + url
+                    parsed = urlparse(url)
+                    host = parsed.hostname or ""
+                    if (parsed.scheme != "https" or parsed.username or parsed.password or
+                            not (host == "hdslb.com" or host.endswith(".hdslb.com") or
+                                 host == "bilibili.com" or host.endswith(".bilibili.com"))):
+                        continue
+                    response = client.get(url)
+                    if response.status_code != 200 or len(response.content) > 2_000_000:
+                        continue
+                    raw = response.json()
+                    if not isinstance(raw, dict):
+                        continue
+                    lines = raw.get("body") or []
+                    segments = valid_segments([{"start": x.get("from"), "end": x.get("to"),
+                                                "text": x.get("content")} for x in lines if isinstance(x, dict)])
+                    if not segments:
+                        continue
+                    lang = str(track.get("lan") or "und")
+                    safe_lang = re.sub(r"[^a-zA-Z0-9_-]", "_", lang)[:30]
+                    path = ctx.workdir / f"subtitle.platform.{safe_lang}.json"
+                    path.write_bytes(response.content)
+                    ctx.remember_info({"title": video.get("title"), "duration": video.get("duration")})
+                    ctx.subtitle = {"segments": segments, "language": lang.replace("ai-", ""),
+                                    "kind": "platform", "how": f"B站平台字幕（{lang}）",
+                                    "raw_file": path.name}
+                    at.success(f"保存了 B站原始字幕 JSON：{len(segments)} 段")
+                    return
+        except StrategyFailed:
+            raise
+        except (httpx.HTTPError, ValueError, TypeError, KeyError):
+            raise StrategyFailed("B站字幕查询暂时失败，请检查 Chrome 登录状态", expected=True) from None
+        raise StrategyFailed("字幕列表有记录，但没下载到可用的字幕文件", expected=True)
 
 BILI_PAGE_JS = r"""
 () => {
@@ -69,18 +157,20 @@ class BiliSubtitleCheck(Strategy):
 
 class BiliYtdlpAudio(Strategy):
     key = "bili_ytdlp_audio"
-    label = "yt-dlp 下载音频（不带 cookie）"
-    explain = "B站下载音频不需要任何 cookie。只要最小的那条音轨（约 64kbps），对语音识别足够了。"
+    label = "yt-dlp 下载 B站媒体（不带 cookie）"
+    explain = "按任务选项下载完整视频或音频；媒体文件不需要登录 Cookie。"
     needs = "none"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:
         out = _dl_dir(ctx, self.key)
         audio_format = "bv*+ba/b" if ctx.options.keep_video else "wa[vcodec=none]/ba"
-        path = ytdlp.download_media(ctx.url, out, at, audio_format=audio_format)
+        path = ytdlp.download_media(ctx.url, out, at, audio_format=audio_format,
+                                    keep_video=ctx.options.keep_video)
         ctx.remember_info(ytdlp.read_info_json(out))
         ensure_ok_media(path, at)
         ctx.media_path, ctx.media_strategy = path, self.key
-        ctx.media_how = "yt-dlp 直接下载音频（没用任何 cookie）"
+        kind = "完整视频" if ctx.options.keep_video else "音频"
+        ctx.media_how = f"yt-dlp 直接下载{kind}（没用任何 cookie）"
         at.success(f"下载好了：{path.name}（{path.stat().st_size / 1e6:.1f}MB）")
 
 

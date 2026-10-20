@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 
@@ -134,6 +135,48 @@ def _media_urls(detail: dict, keep_video: bool = False) -> list[tuple[str, str]]
     return video_list + audio_list if keep_video else audio_list + video_list
 
 
+class DouyinGuestSubtitles(Strategy):
+    key = "douyin_guest_subtitles"
+    label = "从抖音视频页查平台原字幕"
+    explain = "读取抖音页面自己取得的视频详情；有字幕轨道时保存平台返回的原始文件。"
+    needs = "visitor"
+    option_flag = "official_only"
+
+    def run(self, ctx: Ctx, at: AttemptCtx) -> None:
+        from ..chrome_bridge import fetch
+        from ..douyin_cookie.tracks import candidate_tracks, parse_payload
+
+        detail = _fetch_detail(ctx, at)
+        ctx.info["_douyin_detail"] = detail
+        _remember(ctx, detail)
+        for track in candidate_tracks(detail, ctx.options.language):
+            try:
+                if "data" in track:
+                    content = track["data"]
+                    raw = json.dumps(content, ensure_ascii=False).encode("utf-8")
+                else:
+                    raw = b"".join(fetch(track["url"], 2_000_000))
+                    content = raw.decode("utf-8-sig")
+                segments = parse_payload(content)
+            except Exception:
+                continue
+            if not segments:
+                continue
+            ext = "json"
+            if isinstance(content, str):
+                ext = "vtt" if content.lstrip().startswith("WEBVTT") else (
+                    "srt" if "-->" in content else "json")
+            safe_lang = re.sub(r"[^a-zA-Z0-9_-]", "_", track["language"])[:30]
+            path = ctx.workdir / f"subtitle.platform.{safe_lang}.{ext}"
+            path.write_bytes(raw)
+            ctx.subtitle = {"segments": segments, "language": track["language"],
+                            "kind": "platform", "how": "抖音平台字幕（视频页提供）",
+                            "raw_file": path.name}
+            at.success(f"保存了抖音平台原字幕：{len(segments)} 段")
+            return
+        raise StrategyFailed("这个视频页没有返回可用的平台字幕；仍会下载完整视频", expected=True)
+
+
 class DouyinBrowserDetail(Strategy):
     key = "douyin_browser"
     label = "专用浏览器打开抖音页面（不登录）"
@@ -164,7 +207,9 @@ class DouyinBrowserDetail(Strategy):
                 profile.rename(old)  # 先改名留一份，不直接删
                 at.log("已把旧的访客身份换下来（留在 data/browser-profile/douyin.old），用全新的身份重试", level="info")
         t0 = time.time()
-        detail = _fetch_detail(ctx, at)
+        detail = ctx.info.get("_douyin_detail") if not self.fresh_profile else None
+        if not detail:
+            detail = _fetch_detail(ctx, at)
         (ctx.workdir / "douyin_detail.json").write_text(json.dumps(detail, ensure_ascii=False), encoding="utf-8")
         _remember(ctx, detail)
         video = detail.get("video") or {}
@@ -173,7 +218,10 @@ class DouyinBrowserDetail(Strategy):
         out = _dl_dir(ctx, self.key)
         errors = []
         wanted_video = ctx.options.keep_video
-        for url, what in _media_urls(detail, wanted_video):
+        candidates = _media_urls(detail, wanted_video)
+        if ctx.options.official_only:
+            candidates = [(url, what) for url, what in candidates if what != "纯音频"]
+        for url, what in candidates:
             dest = out / ("media.m4a" if what == "纯音频" else "media.mp4")
             try:
                 path = download_url(url, dest, at, referer="https://www.douyin.com/")

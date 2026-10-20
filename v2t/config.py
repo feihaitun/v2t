@@ -40,6 +40,7 @@ class Options:
     douyin_chrome: bool = False  # 从正常登录的 Chrome 页面读取资料（独立连接器）
     allow_thirdparty: bool = False   # 允许把链接交给第三方解析网站（默认关）
     keep_video: bool = False         # 保留下载的视频文件（默认只留音频）
+    official_only: bool = False      # 只取平台字幕和完整视频，不运行 Whisper
     initial_prompt: str = ""         # 给 Whisper 的提示词：人名、专业词
     headed_browser: bool = False     # 浏览器步骤是否弹出窗口（调试用）
 
@@ -50,6 +51,10 @@ class Options:
         # API 只接受真正的布尔值授权；字符串 "false" 不能误开启账号访问。
         known["douyin_cookie_subtitles"] = data.get("douyin_cookie_subtitles") is True
         known["douyin_chrome"] = data.get("douyin_chrome") is True
+        known["official_only"] = data.get("official_only") is True
+        if known["official_only"]:
+            known["prefer_subtitles"] = True
+            known["keep_video"] = True
         profile = known.get("douyin_cookie_profile", "")
         known["douyin_cookie_profile"] = profile if isinstance(profile, str) else ""
         return cls(**known)
