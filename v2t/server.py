@@ -45,7 +45,7 @@ async def _only_local_pages(request: Request, call_next):
             return JSONResponse({"detail": "不接受其他网站发来的请求"}, status_code=403)
     response = await call_next(request)
     if request.url.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "no-cache"  # 每次都问一下有没有新版，改完界面刷新就生效
+        response.headers["Cache-Control"] = "no-store"  # 本机脚本很小；每次重载都取当前文件，避免旧 JS 和新 HTML 混用
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     return response
