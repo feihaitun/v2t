@@ -29,3 +29,51 @@ node_modules/
 .DS_Store
 *.swp
 *.swo
+
+# Local jobs, uploads, media, browser profiles and logs
+/data/
+*.log
+
+# Python environments and generated caches
+/.venv/
+/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+/build/
+/dist/
+
+# Frontend dependencies
+node_modules/
+
+# Local settings and credentials
+.env
+.env.*
+!.env.example
+/.claude/launch.json
+/.claude/settings.local.json
+/.codex/
+.DS_Store
+*.swp
+*.swo
+
+# ---- 2026-11 GitHub backup audit additions ----
+# Keys, credential and cookie exports (never commit; cookies are read in memory only)
+*.pem
+*.key
+*.p12
+credentials*.json
+cookies*.txt
+*.cookies
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+# Editor files
+.idea/
+.vscode/
