@@ -12,7 +12,7 @@
     <span class="logo" aria-hidden="true">▶︎</span>
     <div>
       <div class="brand-title">视频转文字</div>
-      <div class="brand-sub">抖音 · 小红书 · YouTube · B站 · 本地视频</div>
+      <div class="brand-sub">抖音 · 小红书 · YouTube · B站 · X · 本地视频</div>
     </div>
   </div>
   <div class="top-actions">
@@ -70,7 +70,7 @@
           <label class="check"><input type="checkbox" id="optSubs" checked> 有现成字幕就直接用（更快更准）</label>
           <label class="check"><input type="checkbox" id="optKeep"> 下载完整视频（默认只要音频）</label>
           <label class="check"><input type="checkbox" id="optOfficial"> 只下载平台字幕源文件和完整视频，不转录
-            <span class="muted">（支持抖音、B站和 YouTube；B站和 YouTube 优先用 Chrome 登录状态，分别保存可用的中英文字幕；没有原字幕就只交付视频）</span></label>
+            <span class="muted">（支持抖音、B站、YouTube 和 X；B站和 YouTube 优先用 Chrome 登录状态；X 使用公开链接，没有原字幕就只交付视频）</span></label>
           <label class="check"><input type="checkbox" id="optThird"> 允许用第三方解析网站兜底
             <span class="muted">（会把链接发给别人的网站，默认关）</span></label>
           <label class="wide">专业词提示（人名、术语，用逗号隔开，能减少同音错字）
@@ -165,6 +165,7 @@
               <li><b>小红书</b>：用「手机版网页」读视频地址（不登录、不带 cookie）→ 模拟 iPhone 的浏览器 → yt-dlp</li>
               <li><b>B站</b>：原文件模式先用 Chrome 登录状态下载视频，再试访客下载；普通模式先访客下载音频</li>
               <li><b>YouTube</b>：原文件模式先用 Chrome 登录状态下载视频，再试访客下载；普通模式使用访客下载</li>
+              <li><b>X / Twitter</b>：先查公开字幕，再下载完整视频；没有原字幕时可以手动转录</li>
             </ul>
           </li>
           <li><b>抽音频</b>：ffmpeg 把声音抽出来。</li>

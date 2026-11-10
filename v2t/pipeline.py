@@ -65,7 +65,7 @@ def make_plan(raw: str, options: config.Options | None = None) -> dict:
 
     if kind == "file":
         if options.official_only:
-            raise ValueError("平台原文件模式需要 B站、抖音或 YouTube 的视频链接")
+            raise ValueError("平台原文件模式需要 B站、抖音、YouTube 或 X 的视频链接")
         info = {}
         try:
             info = probe(Path(value))
@@ -160,14 +160,14 @@ def run_job(job: Job) -> Job:
         kind = job.data["input_type"]
         if kind == "file":
             if options.official_only:
-                raise StepFailed("平台原文件模式需要 B站、抖音或 YouTube 的视频链接")
+                raise StepFailed("平台原文件模式需要 B站、抖音、YouTube 或 X 的视频链接")
             _resolve_file(ctx)
             job.skip_step("subtitles", "本地文件没有平台字幕")
             job.skip_step("media", "文件已经在本机，不用下载")
         else:
             _resolve_url(ctx)
-            if options.official_only and ctx.platform.key not in ("bilibili", "douyin", "youtube"):
-                raise StepFailed("平台原字幕和完整视频模式目前支持 B站、抖音和 YouTube")
+            if options.official_only and ctx.platform.key not in ("bilibili", "douyin", "youtube", "twitter"):
+                raise StepFailed("平台原字幕和完整视频模式目前支持 B站、抖音、YouTube 和 X")
             _find_subtitles(ctx)
             if options.official_only:
                 try:

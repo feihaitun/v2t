@@ -46,7 +46,8 @@ class YtdlpSubtitles(Strategy):
         lang = choice["lang"].replace("ai-", "").replace("-orig", "")
         ctx.subtitle = {
             "segments": segments, "language": lang, "kind": choice["kind"], "track": choice["lang"],
-            "file": path.name, "how": f"{ctx.platform.label} 自带的{kind}（轨道 {choice['lang']}）",
+            "file": path.name, "raw_file": path.name,
+            "how": f"{ctx.platform.label} 自带的{kind}（轨道 {choice['lang']}）",
         }
         at.success(f"拿到{kind}：{choice['lang']}，{len(segments)} 段")
 
@@ -61,7 +62,9 @@ class YtdlpDirect(Strategy):
         out = _dl_dir(ctx, self.key)
         path = ytdlp.download_media(ctx.url, out, at, keep_video=ctx.options.keep_video)
         ctx.remember_info(ytdlp.read_info_json(out))
-        ensure_ok_media(path, at)
+        info = ensure_ok_media(path, at)
+        if ctx.options.keep_video and not info["has_video"]:
+            raise StrategyFailed("这次只拿到了音频，没有画面；接下来换办法下载完整视频")
         ctx.media_path, ctx.media_strategy = path, self.key
         ctx.media_how = "yt-dlp 直接下载（没用任何 cookie）"
         at.success(f"下载好了：{path.name}")
@@ -141,7 +144,9 @@ class BrowserGrab(Strategy):
             dest = out / f"media{ext}"
             try:
                 path = download_url(cand["url"], dest, at, referer=self.referer or final_url, cookies=cookies)
-                ensure_ok_media(path, at)
+                info = ensure_ok_media(path, at)
+                if ctx.options.keep_video and not info["has_video"]:
+                    raise StrategyFailed("这个地址只提供音频，没有视频画面")
             except StrategyFailed as exc:
                 errors.append(f"{cand['source']}：{exc.reason}")
                 continue

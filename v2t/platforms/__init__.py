@@ -8,8 +8,9 @@ from .douyin import Douyin
 from .generic import Generic
 from .xiaohongshu import Xiaohongshu
 from .youtube import YouTube
+from .twitter import Twitter
 
-PLATFORMS: list[Platform] = [Douyin(), Xiaohongshu(), YouTube(), Bilibili()]
+PLATFORMS: list[Platform] = [Douyin(), Xiaohongshu(), YouTube(), Bilibili(), Twitter()]
 GENERIC = Generic()
 
 
