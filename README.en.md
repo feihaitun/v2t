@@ -88,5 +88,6 @@ The Douyin extension gets video details from the signed-in page; cookies stay in
 - Video quality and caption languages depend on what the platform provides. Downloads are not guaranteed to be the creator's original upload file.
 - Files stay in `data/jobs/` inside the project. Back up that folder when moving computers; GitHub does not store your tasks or login state.
 - After updating the project, stop the old service and run `./v2t.sh serve` again. Refreshing the browser is not enough.
+- Only process content you have the right to download and use, and follow each platform's rules. This tool is not affiliated with those platforms.
 
-[For developers: libraries, code, and tests](docs/DEVELOPMENT.md) · [Change history (Chinese)](CHANGELOG.md)
+[For developers: libraries and code structure](docs/DEVELOPMENT.md)

@@ -88,5 +88,6 @@ uv pip install --python .venv/bin/python -r requirements.txt
 - 视频清晰度和字幕语言取决于平台提供的内容，不保证是上传前的原文件。
 - 文件存在项目的 `data/jobs/`。换电脑要单独备份这里，GitHub 不保存你的任务和登录状态。
 - 更新项目后，停止旧服务，再运行 `./v2t.sh serve`；只刷新网页不够。
+- 请只处理自己有权下载和使用的内容，并遵守平台规则。本工具与这些平台没有隶属关系。
 
-[给开发者：用到的库、代码结构、测试](docs/DEVELOPMENT.md) · [更新记录](CHANGELOG.md)
+[给开发者：用到的库和代码结构](docs/DEVELOPMENT.md)

@@ -56,13 +56,13 @@ Bilibili and YouTube source-files strategies read only their own site's Chrome c
 
 The Douyin connector uses the existing Chrome session without extracting credentials. It opens its own target-video tab and closes that tab after use. Local requests are video-specific, use one-time tokens, and expire after 35 seconds. Keep Origin/Host checks and media redirect validation. See the [connector documentation](../chrome-connector/README.md).
 
-The older Douyin cookie module remains for CLI compatibility; the web interface does not enable it. See [legacy module notes](../v2t/douyin_cookie/README.md).
+The older Douyin cookie module remains for CLI compatibility; the web interface does not enable it. Its explicit CLI flag is `--douyin-cookie-subtitles`; `--douyin-cookie-profile` selects a Chrome profile. The shared loader also serves YouTube and Bilibili with their own domain filters.
 
 X uses public URLs without Chrome cookies. Its canonical URL keeps `/video/N` so a post with several videos retains the user's choice.
 
 The server binds to `127.0.0.1`. Mobile/LAN access and Android installation are not implemented.
 
-## CLI and tests
+## CLI
 
 ```bash
 ./v2t.sh run --keep-video "VIDEO_URL"
@@ -75,20 +75,9 @@ The server binds to `127.0.0.1`. Mobile/LAN access and Android installation are 
 
 The Douyin Chrome connector requires the running web page; it has no corresponding CLI option.
 
-Install pytest for Python tests. JavaScript tests need Node.js (previously verified with Node.js 22).
-
-```bash
-uv pip install --python .venv/bin/python pytest
-.venv/bin/python -m pytest -q
-node --test tests/chrome_connector.test.cjs
-node --check web/app.js
-```
-
-Latest verification: 91 Python tests and 3 connector tests passed. Offline tests do not prove that a platform still provides captions. Real sample results and limitations are recorded in [CHANGELOG.md](../CHANGELOG.md).
-
 ## Versions and updates
 
-The current branch is `codex/official-source-files`. The latest release tag remains `v0.2.0-rc.2`; the branch includes later fixes and X support. Python reports `0.2.0rc2`; the unchanged Chrome extension reports `0.2.0-rc.1`. Do not move existing release tags.
+The current branch is `codex/official-source-files`. The latest release tag remains `v0.2.0-rc.2`; the branch includes later fixes and X support. Python reports `0.2.0rc2`; the unchanged Chrome extension reports `0.2.0-rc.1`.
 
 Restart the Python server after code changes. Reload the unpacked Chrome extension only when its code changes. The connector currently targets port 8765.
 
