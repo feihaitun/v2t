@@ -11,7 +11,17 @@
 - 可以使用你在 Chrome 里的登录状态，获取账号能访问的视频和字幕。
 - 没有字幕时，用 Whisper 在自己的电脑上识别声音。可下载 TXT、SRT、Markdown 和 JSON，也能回看历史任务。
 
-目前适合 **Apple 芯片的 Mac（M 系列）**。需要联网下载视频；语音识别在本机运行。Windows、Linux 和 Intel Mac 的完整流程未验证；没有 Android 或 iPhone App，手机暂时不能直接提交任务。网页按钮目前是中文。
+完整功能目前面向 **Apple M 系列 Mac，不限于 M5**：M1、M2、M3、M4、M5 都属于这一系列，仍需满足所装依赖的系统和内存要求。项目使用 Whisper 的 MLX 实现来加速语音识别，并非每一款芯片都已实测。
+
+| 功能 | 需要语音识别组件吗？ |
+|---|---|
+| 下载视频或音频 | 不需要 |
+| 下载平台已有字幕、导出文字稿 | 不需要 |
+| 没有字幕时，从声音生成文字 | 需要；当前项目只接入了 MLX Whisper |
+
+**没装语音识别组件，仍可启动网页和下载。**如果在普通模式遇到无字幕视频，转写步骤会失败；请选「只下载平台字幕源文件和完整视频，不转录」。环境自检可能提示语音识别缺失，这不阻止启动网页。
+
+Whisper 本身支持 CPU；本项目尚未自动接入 CPU 版本。Intel Mac、Windows、Linux 可以尝试基础下载，但完整流程未验证，YouTube/B站的 Chrome 登录读取目前只适配 macOS。没有 Android 或 iPhone App。网页按钮目前是中文。
 
 ## 安装一次
 
@@ -35,6 +45,8 @@ uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/python -m playwright install chromium
 ```
+
+只想下载、不需要语音识别：把上面安装命令中的 `requirements.txt` 换成 `requirements-base.txt`，其余步骤相同。Apple M 系列 Mac 以后想加转写功能，再安装完整依赖即可。其他电脑的安装入口和 CPU 转写办法见[兼容性说明](docs/DEVELOPMENT.md#without-apple-silicon-or-mlx)。
 
 **3. 检查并启动。**
 

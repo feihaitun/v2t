@@ -6,7 +6,7 @@ The app is written in Python 3.12, with plain JavaScript, HTML, and CSS for the 
 
 ## Dependencies
 
-Runtime dependencies are in [requirements.txt](../requirements.txt). Versions are not fully pinned; a fresh install is not a reproducible lockfile build.
+Download/web dependencies are in [requirements-base.txt](../requirements-base.txt). The full [requirements.txt](../requirements.txt) adds MLX Whisper for Apple Silicon Macs. Versions are not fully pinned; a fresh install is not a reproducible lockfile build.
 
 | Component | Purpose |
 |---|---|
@@ -91,3 +91,42 @@ Latest verification: 91 Python tests and 3 connector tests passed. Offline tests
 The current branch is `codex/official-source-files`. The latest release tag remains `v0.2.0-rc.2`; the branch includes later fixes and X support. Python reports `0.2.0rc2`; the unchanged Chrome extension reports `0.2.0-rc.1`. Do not move existing release tags.
 
 Restart the Python server after code changes. Reload the unpacked Chrome extension only when its code changes. The connector currently targets port 8765.
+
+## Without Apple Silicon or MLX
+
+MLX Whisper is imported in the speech worker, not at web-server startup. Downloads and existing platform captions do not need it. The doctor check reports missing MLX as a failure, but does not prevent starting the server. In normal mode, missing captions trigger transcription and that step fails if MLX is unavailable. Use `official_only` for supported platforms to avoid transcription.
+
+For an Intel Mac, use the main guide with `requirements-base.txt`. For Linux or Windows, install Python 3.12, ffmpeg and Deno using your OS's installation method, then try the commands below from the project folder. These are experimental entry points, not a tested cross-platform release. Chrome cookie reading for YouTube/Bilibili is macOS-specific; Finder buttons and the `.command` launcher are also Mac-specific.
+
+Linux:
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-base.txt
+.venv/bin/python -m playwright install chromium
+.venv/bin/python -m v2t serve
+```
+
+Windows PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-base.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
+.\.venv\Scripts\python.exe -m v2t serve
+```
+
+### A separate CPU transcription option
+
+[OpenAI Whisper supports CPU execution](https://github.com/openai/whisper/blob/main/whisper/transcribe.py). A different speech model is not inherently required: it is the execution library that changes. This project's `mlx-community/whisper-large-v3-turbo` weights cannot simply be passed to the OpenAI Whisper loader.
+
+After downloading a video, you can use OpenAI Whisper separately with ffmpeg installed. In a separate Python environment, run:
+
+```bash
+python -m pip install openai-whisper
+python -m whisper "video.mp4" --model base --device cpu --fp16 False --output_dir transcripts
+```
+
+`base` is a smaller starting model; larger models need more memory and usually take longer on a CPU. This command is an external workflow, has not been tested here, and does not connect to the app's transcription button or history.
+
+To integrate CPU transcription, add a backend choice in `whisper_worker.py`, use compatible weights, preserve the worker's output format, and update health checks and error messages. Installing `openai-whisper` alone does not make this app switch backends.

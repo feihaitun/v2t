@@ -11,7 +11,17 @@ Paste a video link to download the video and captions. If there are no captions,
 - Can use your existing Chrome login to get videos and captions your account can access.
 - Uses Whisper on your computer when captions are missing. Export TXT, SRT, Markdown, or JSON, and revisit past tasks.
 
-For now, use an **Apple Silicon Mac (M series)**. Downloads need internet; speech recognition runs locally. The full workflow has not been tested on Windows, Linux, or Intel Macs. There is no Android or iPhone app, and phones cannot submit tasks directly. The app's buttons are currently in Chinese.
+The full workflow targets **Apple M-series Macs, not just M5**. M1, M2, M3, M4, and M5 are all in this family; installed dependencies still have OS and memory requirements. This project uses the MLX implementation of Whisper for speech recognition. Not every chip has been tested.
+
+| Feature | Needs speech recognition installed? |
+|---|---|
+| Download video or audio | No |
+| Download existing platform captions and export text | No |
+| Create text from speech when captions are missing | Yes; the app currently uses MLX Whisper only |
+
+**Without speech recognition, the web app and downloads can still work.** Normal mode will fail at transcription if captions are missing. Choose the platform-files-only option instead. The environment check may report missing speech recognition; that does not block the web server.
+
+Whisper itself supports CPUs, but this app has no automatic CPU fallback yet. Intel Mac, Windows, and Linux users can try basic downloads; the full workflow is unverified, and YouTube/Bilibili Chrome login reading currently targets macOS only. There is no Android or iPhone app. The app's buttons are in Chinese.
 
 ## Install once
 
@@ -35,6 +45,8 @@ uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/python -m playwright install chromium
 ```
+
+For downloads without speech recognition, replace `requirements.txt` with `requirements-base.txt` in the install command above. Keep the other steps. On an Apple M-series Mac, install the full dependencies later to add transcription. See [compatibility notes](docs/DEVELOPMENT.md#without-apple-silicon-or-mlx) for other computers and a separate CPU transcription option.
 
 **3. Check and start.**
 

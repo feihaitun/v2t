@@ -1,8 +1,3 @@
-# Runtime dependencies. Versions are not fully pinned.
-yt-dlp[default,curl-cffi]
-fastapi
-uvicorn[standard]
-playwright
+# Full installation for Apple Silicon Macs.
+-r requirements-base.txt
 mlx-whisper
-opencc-python-reimplemented
-httpx

@@ -1,0 +1,7 @@
+# Download and web dependencies; no speech recognition. Versions are not fully pinned.
+yt-dlp[default,curl-cffi]
+fastapi
+uvicorn[standard]
+playwright
+opencc-python-reimplemented
+httpx
