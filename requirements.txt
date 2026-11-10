@@ -1,0 +1,8 @@
+# Runtime dependencies. Versions are not fully pinned.
+yt-dlp[default,curl-cffi]
+fastapi
+uvicorn[standard]
+playwright
+mlx-whisper
+opencc-python-reimplemented
+httpx
