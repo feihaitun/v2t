@@ -2,13 +2,67 @@
 
 把抖音、小红书、YouTube、B站、X 的链接或本地视频交给 v2t：优先取平台字幕，没有可用字幕时下载音频，在本机用 Whisper 转写。可选择下载完整视频，并导出 Markdown、SRT、TXT 和 JSON。
 
-**当前版本：`v0.2.0-rc.2`（平台原字幕与完整视频预览版，2026-10-20）。**
+**当前代码：`codex/official-source-files` 分支。** 最近的发布标签是 `v0.2.0-rc.2`；分支上的修正和 X 支持比该标签更新，详见 [版本记录](CHANGELOG.md)。
 
 当前代码在 `v0.2.0-rc.2` 基础上支持 YouTube、B站、抖音和 X 的「只下载平台字幕源文件和完整视频」模式；YouTube 和 B站优先使用 Chrome 登录状态，并分别保存平台提供的中文、英文字幕。
 
 抖音的独立 Chrome 连接器开关默认关闭，关闭时沿用访客流程；开启后使用日常 Chrome 的登录状态。版本改动及实测范围见 [CHANGELOG.md](CHANGELOG.md)。
 
-> 发布状态：已在本机日常 Chrome 实测抖音连接器下载，以及 YouTube、B站登录态视频和平台字幕下载。不同视频能取得的字幕语言和来源取决于平台返回的轨道；跨平台运行尚未验证，因此仍标为预览版。
+> 已在本机实测抖音连接器、YouTube/B站登录态视频及字幕下载，以及公开 X 帖子的视频下载。不同视频能取得的字幕语言和来源取决于平台实际返回的轨道。
+
+## 功能一览
+
+| 你想要什么 | 网页里怎么选 | 结果 |
+|---|---|---|
+| 只要文字稿 | 保持默认设置，粘贴链接后点「开始转文字」 | 优先取平台字幕；没有字幕时下载音频，用本机 Whisper 转写，提供 MD/SRT/TXT/JSON |
+| 视频和文字稿 | 展开「选项」，勾选「下载完整视频」 | 下载有画面和声音的视频；字幕优先用平台轨道，否则本机转写 |
+| 只要平台原文件 | 勾选「只下载平台字幕源文件和完整视频，不转录」 | 下载完整视频及平台实际提供的字幕源文件；没有字幕也保留视频，不运行 Whisper |
+| 已下载视频没有原字幕 | 在该任务结果中点「用已下载视频转录」 | 复用本地视频生成文字稿，不再从平台下载 |
+
+**平台范围：**抖音、B站、YouTube、X/Twitter 的单条视频可使用原文件模式；小红书和其他网站使用普通模式。YouTube、B站的原文件模式会优先尝试各自站点在本机 Chrome 中的登录状态；抖音登录态需要安装下文的 Chrome 连接器；X 目前使用公开链接。平台没提供的字幕语言不会凭空生成。下载的是账号可访问的平台播放文件，不保证等于上传者的原始母版。
+
+## 安装（macOS + Apple Silicon）
+
+当前项目的本机转写使用 MLX，已验证环境为 macOS 的 Apple Silicon。**Android 说明见下文**；Android 不是当前服务的安装目标。
+
+1. 安装 [Homebrew](https://brew.sh/) 后，在终端安装 `uv` 和 ffmpeg：
+
+   ```bash
+   brew install uv ffmpeg
+   ```
+
+2. 克隆这个私有仓库并进入项目目录。需要有该 GitHub 仓库的访问权限；如果项目文件夹已经在电脑上，直接进入现有文件夹即可。
+
+   ```bash
+   git clone https://github.com/feihaitun/v2t.git
+   cd v2t
+   ```
+
+3. 创建 Python 3.12 环境，安装依赖和 Playwright 浏览器：
+
+   ```bash
+   uv python install 3.12
+   uv venv --python 3.12 .venv
+   uv pip install --python .venv/bin/python "yt-dlp[default,curl-cffi]" fastapi "uvicorn[standard]" playwright mlx-whisper opencc-python-reimplemented httpx pytest
+   .venv/bin/python -m playwright install chromium
+   ```
+
+4. 检查环境并启动网页：
+
+   ```bash
+   ./v2t.sh doctor
+   ./v2t.sh serve
+   ```
+
+   在同一台 Mac 的浏览器打开 [http://127.0.0.1:8765/](http://127.0.0.1:8765/)。保持终端窗口打开；`Ctrl+C` 停止服务。首次转写可能需要联网下载 Whisper 模型。
+
+**登录是可选的。**不登录也可尝试公开链接。需要抖音登录状态时，安装下文的 Chrome 连接器；YouTube 和 B站的原文件模式会尝试读取本机 Chrome 中相应站点的会话。请在你自己使用的 Chrome 用户配置里登录目标平台。X 的公开帖子下载不需要 Chrome 连接器。
+
+**更新代码后**，在项目目录运行 `git pull`，停止旧服务，再运行 `./v2t.sh serve`。只刷新网页不会让已经运行的 Python 服务载入新平台代码。
+
+## Android 现状
+
+目前**没有 Android 安装包或原生 App**。服务只监听 Mac 本机的 `127.0.0.1:8765`；Android 手机不能直接通过局域网打开这个地址。本机转写依赖 macOS/Apple Silicon 的 MLX，Chrome 连接器也按桌面版 Chrome 设计。可以把 Mac 上生成的 MP4、SRT、TXT 等文件传到 Android 设备播放或阅读；手机端直接提交任务尚未实现。
 
 ## 日常怎么用
 
@@ -134,6 +188,7 @@
 ```bash
 ./v2t.sh run "视频链接或本地文件路径"
 ./v2t.sh run --keep-video "视频链接"       # 下载完整视频并生成文字稿
+./v2t.sh run --official-only "视频链接"    # 只取平台原字幕和完整视频，不转写
 ./v2t.sh run --lang zh --prompt "人名,术语" "视频链接"
 ./v2t.sh run --no-subs "视频链接"          # 强制转写
 ./v2t.sh run --dev "视频链接"              # 查看详细日志
@@ -168,18 +223,7 @@
 
 ## 环境与开发
 
-当前实现面向 **macOS + Apple Silicon**，本机使用 Python 3.12、ffmpeg/ffprobe、Playwright Chromium、MLX Whisper。Chrome 连接器另需日常使用的 Google Chrome；脚本测试使用 Node.js 22。
-
-已有本机环境可以直接启动。新环境需先装好 Python 3.12、`uv`、ffmpeg；在项目目录创建环境：
-
-```bash
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python "yt-dlp[default,curl-cffi]" fastapi "uvicorn[standard]" playwright mlx-whisper opencc-python-reimplemented httpx pytest
-.venv/bin/python -m playwright install chromium
-./v2t.sh doctor
-```
-
-这些安装命令未锁定全部依赖版本；首次启动或转写需要联网下载依赖/模型。当前未验证其他操作系统或非苹果芯片上的完整转写流程。
+用户安装步骤见上文。当前实现面向 **macOS + Apple Silicon**，使用 Python 3.12、ffmpeg/ffprobe、Playwright Chromium 和 MLX Whisper；Chrome 连接器另需桌面版 Google Chrome。脚本测试使用 Node.js 22。安装命令未锁定全部依赖版本，首次安装和首次转写需要联网；其他操作系统与非苹果芯片的完整流程尚未验证。
 
 运行自动测试：
 
@@ -192,7 +236,7 @@ node --check chrome-connector/local-page.js
 node --check chrome-connector/page-capture.js
 ```
 
-当前工作区验证记录：89 项 Python 测试通过；连接器的 3 项 JavaScript 测试此前通过，相关脚本语法检查通过。2026-10-20 已在正常 Chrome 中完成抖音视频的连接器下载验证，以及 YouTube 和 B站登录态原文件模式验证；具体字幕语言和来源见版本记录。
+当前工作区验证记录：91 项 Python 测试通过；连接器的 3 项 JavaScript 测试此前通过，相关脚本语法检查通过。已在本机验证抖音连接器、YouTube 和 B站登录态原文件模式，以及 X 公开帖子原文件模式；具体字幕语言和来源见版本记录。
 
 ```text
 v2t/
@@ -219,4 +263,4 @@ git show v0.2.0-rc.2 --stat
 git log -1 --oneline
 ```
 
-本次仅保存本地提交和带说明的标签；仓库未配置远程地址，因此没有推送。后续改动应更新包版本及 `CHANGELOG.md`，扩展有改动时同步更新其版本；不要移动已有版本标签。
+代码仓库为 [feihaitun/v2t](https://github.com/feihaitun/v2t)（私有仓库），当前开发分支和默认分支是 `codex/official-source-files`。拉取该分支后，按上文安装与启动；更新后记得重启服务。`data/`、`.venv/` 和浏览器配置不推送到 GitHub，因此换电脑后不会自动出现旧任务和登录状态。发布新标签时应同步更新包版本及 `CHANGELOG.md`，扩展代码变化时同步更新扩展版本；不要移动已有版本标签。
