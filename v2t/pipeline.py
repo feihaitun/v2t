@@ -472,12 +472,18 @@ def _write_outputs(ctx: Ctx, elapsed: float) -> None:
     with job.step("output") as st:
         if ctx.options.official_only and not ctx.subtitle:
             files = {}
+            media_has_video = None
             if ctx.media_path and ctx.media_path.exists() and ctx.workdir in ctx.media_path.parents:
                 files["media"] = str(ctx.media_path.relative_to(ctx.workdir))
+                try:
+                    media_has_video = probe(ctx.media_path)["has_video"]
+                except StrategyFailed:
+                    pass
             how = "完整视频已下载；平台没有交回可用的原字幕，未运行转录"
             job.update(result={"source": "platform_assets", "how": how, "method_short": "平台视频，无原字幕",
                                "language": None, "language_label": "—", "segments": 0, "chars": 0,
                                "files": files, "media_strategy": ctx.media_strategy,
+                               "media_has_video": media_has_video,
                                "platform_summary": ctx.info.get("platform_summary")})
             st.summary(how)
             return
@@ -521,13 +527,19 @@ def _write_outputs(ctx: Ctx, elapsed: float) -> None:
                                    "files": {key: str((folder / name).relative_to(ctx.workdir))
                                              for key, name in track_files.items()}})
         extra = {}
+        media_has_video = None
         if ctx.media_path and ctx.media_path.exists() and ctx.workdir in ctx.media_path.parents:
             extra["media"] = str(ctx.media_path.relative_to(ctx.workdir))  # 网页上点时间戳可以直接播放
+            try:
+                media_has_video = probe(ctx.media_path)["has_video"]
+            except StrategyFailed:
+                pass
         chars = sum(len(s["text"]) for s in segments)
         job.update(result={
             "source": source, "how": how, "method_short": short, "language": language,
             "language_label": lang_name(language), "segments": len(segments), "chars": chars,
             "files": files | extra, "media_strategy": ctx.media_strategy,
+            "media_has_video": media_has_video,
             "platform_summary": ctx.info.get("platform_summary"),
             "caption_tracks": caption_tracks,
         })

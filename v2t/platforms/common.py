@@ -54,7 +54,7 @@ class YtdlpSubtitles(Strategy):
 class YtdlpDirect(Strategy):
     key = "ytdlp_direct"
     label = "yt-dlp 直接下载"
-    explain = "最快的办法：直接让 yt-dlp 下载音频，不带任何 cookie。"
+    explain = "按“下载完整视频”选项取视频或音频，不带任何 cookie。"
     needs = "none"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:

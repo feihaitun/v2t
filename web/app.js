@@ -479,12 +479,17 @@
     state.resultFor = id;
     const files = job.result.files || {};
     const base = `/api/jobs/${id}/files/`;
+    const mediaIsVideo = () => {
+      if (!files.media) return false;
+      // yt-dlp 的纯音轨也可能装在 .mp4 容器中，优先看实际轨道。
+      if (typeof job.result.media_has_video === "boolean") return job.result.media_has_video;
+      return /\.(mp4|mov|webm|mkv|m4v)$/i.test(files.media);
+    };
     const mediaLink = () => {
       if (!files.media) return null;
       const ext = files.media.split(".").pop();
-      const isVideo = /^(mp4|mov|webm|mkv|m4v)$/i.test(ext);
       const name = `${(job.title || "media").replace(/[\\/:*?"<>|#\s]+/g, "_").slice(0, 60)}.${ext}`;
-      return h("a", { href: base + files.media, download: name }, isVideo ? "下载视频" : "下载音频");
+      return h("a", { href: base + files.media, download: name }, mediaIsVideo() ? "下载视频" : "下载音频");
     };
     $("resultTitle").textContent = job.options?.official_only ? "平台原文件" : "文字稿";
     if (!files.json && job.options?.official_only) {
@@ -501,7 +506,7 @@
       $("tabSegments").replaceChildren();
       $("playerWrap").replaceChildren();
       $("playerWrap").hidden = !files.media;
-      if (files.media) $("playerWrap").append(h("video", { controls: true, preload: "metadata", src: base + files.media }));
+      if (files.media) $("playerWrap").append(h(mediaIsVideo() ? "video" : "audio", { controls: true, preload: "metadata", src: base + files.media }));
       $("resultBox").hidden = false;
       return;
     }
@@ -550,8 +555,7 @@
     wrap.replaceChildren();
     wrap.hidden = true;
     if (files.media) {
-      const isVideo = /\.(mp4|mov|webm|mkv|m4v)$/i.test(files.media);
-      const player = h(isVideo ? "video" : "audio", { controls: true, preload: "metadata", src: base + files.media, id: "player" });
+      const player = h(mediaIsVideo() ? "video" : "audio", { controls: true, preload: "metadata", src: base + files.media, id: "player" });
       player.addEventListener("timeupdate", () => highlightSeg(player.currentTime));
       wrap.append(player);
       wrap.hidden = false;
