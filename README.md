@@ -25,7 +25,7 @@ Whisper 本身支持 CPU；本项目尚未自动接入 CPU 版本。Intel Mac、
 
 ## 安装一次
 
-打开 Mac 的「终端」，按顺序复制运行。需要先装好 [Homebrew](https://brew.sh/)。这个仓库目前是私有的，需要仓库访问权限才能下载。
+打开 Mac 的「终端」，按顺序复制运行。需要先装好 [Homebrew](https://brew.sh/)。
 
 **1. 下载工具和项目。** `uv` 管理 Python，ffmpeg 处理声音和画面，Deno 帮助下载 YouTube。
 

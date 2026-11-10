@@ -25,7 +25,7 @@ Whisper itself supports CPUs, but this app has no automatic CPU fallback yet. In
 
 ## Install once
 
-Open Terminal on your Mac and run these steps in order. Install [Homebrew](https://brew.sh/) first. This repository is private, so you need access to clone it.
+Open Terminal on your Mac and run these steps in order. Install [Homebrew](https://brew.sh/) first.
 
 **1. Get the tools and project.** `uv` manages Python, ffmpeg handles video and audio, and Deno helps with YouTube downloads.
 
