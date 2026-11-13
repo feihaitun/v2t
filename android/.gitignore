@@ -1,0 +1,13 @@
+.gradle/
+.kotlin/
+**/build/
+local.properties
+app/libs/*.aar
+app/src/main/res/raw/ytdlp
+*.apk
+captures/
+*.jks
+*.keystore
+__pycache__/
+.venv-sync/
+models/
