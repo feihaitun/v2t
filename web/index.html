@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>视频转文字</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261110-choices">
+  <link rel="stylesheet" href="/static/style.css?v=20261121-en">
 </head>
 <body>
 <header class="topbar">
@@ -16,6 +16,7 @@
     </div>
   </div>
   <div class="top-actions">
+    <button id="langBtn" class="pill pill-lang" type="button" data-no-i18n>English</button>
     <button id="doctorPill" class="pill pill-wait" title="点开看每一项检查">环境自检：检查中…</button>
     <label class="switch" title="打开后能看到每条命令、原始输出、耗时等全部细节">
       <input type="checkbox" id="devToggle">
@@ -123,7 +124,7 @@
     <div class="card job-card" id="jobCard" hidden>
       <div class="job-head">
         <div class="job-title-wrap">
-          <div class="job-title" id="jobTitle">…</div>
+          <div class="job-title" id="jobTitle" data-no-i18n>…</div>
           <div class="job-meta" id="jobMeta"></div>
         </div>
         <div class="job-actions">
@@ -155,7 +156,7 @@
       <div id="liveBox" class="live" hidden>
         <div class="section-title">正在转写… <span id="liveProgress" class="muted small"></span></div>
         <div class="progress"><div id="liveBar" class="bar"></div></div>
-        <div id="liveText" class="live-text"></div>
+        <div id="liveText" class="live-text" data-no-i18n></div>
       </div>
 
       <div id="resultBox" class="result" hidden>
@@ -172,9 +173,9 @@
           <button class="tab" data-tab="segments" role="tab">带时间戳（点时间可以跳到那里播放）</button>
           <button class="tab dev-only" data-tab="raw" role="tab">原始记录</button>
         </div>
-        <div id="tabPlain" class="tab-panel plain-text"></div>
-        <div id="tabSegments" class="tab-panel segments" hidden></div>
-        <div id="tabRaw" class="tab-panel raw" hidden></div>
+        <div id="tabPlain" class="tab-panel plain-text" data-no-i18n></div>
+        <div id="tabSegments" class="tab-panel segments" hidden data-no-i18n></div>
+        <div id="tabRaw" class="tab-panel raw" hidden data-no-i18n></div>
       </div>
     </div>
 
@@ -211,6 +212,7 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20261110-choices"></script>
+<script src="/static/i18n.js?v=20261121-en"></script>
+<script src="/static/app.js?v=20261121-en"></script>
 </body>
 </html>

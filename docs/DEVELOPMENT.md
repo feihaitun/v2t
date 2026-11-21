@@ -76,6 +76,15 @@ The server binds to `127.0.0.1`. Mobile/LAN access and Android installation are 
 
 The Douyin Chrome connector requires the running web page; it has no corresponding CLI option.
 
+## Interface language
+
+The page is Chinese by default; the 中文 / English button in the header switches it. Chinese is the source language everywhere: the backend writes Chinese messages and `web/index.html` / `web/app.js` contain Chinese text. English comes from one lookup file, `web/i18n/en.json` (Chinese text → English), applied in the browser by `web/i18n.js`.
+
+- Entries with `{0}`, `{1}` are templates for text that contains numbers, names or other messages; the English text may reorder them. Matched values are translated again, so a message can contain a platform name or another catalog entry.
+- Row markers (`✔`, `▶`, `a.`), `Title：text` lines, list parts joined with ` → ` or ` · `, and entries that start with `，` / `；` / `（` (appended to another message) are also handled.
+- Text that is the user's own content (the transcript, the video title, live text) is marked `data-no-i18n` and never translated.
+- When you add or change a Chinese message anywhere, add its English to `en.json`. A missing entry simply stays Chinese. Written files such as the `.md` transcript stay Chinese.
+
 ## Versions and updates
 
 Code lives on the `main` branch. Each release is tagged and listed on the [Releases](https://github.com/feihaitun/v2t/releases) page; `v0.3.0` is the latest. Version numbers: desktop app `0.3.0` (`v2t/__init__.py`), Android preview `0.1.0` (`android/app/build.gradle.kts`), Chrome extension `0.2.0-rc.1` (unchanged since that release).

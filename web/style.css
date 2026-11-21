@@ -290,3 +290,5 @@ body:not(.dev) .dev-only { display: none !important; }
 .cookie-module p { margin: 6px 0 0; }
 #douyinCookieSettings { margin-top: 10px; }
 #optDouyinProfile { display: block; width: 100%; margin-top: 4px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--card); }
+
+.pill-lang { font-weight: 600; }

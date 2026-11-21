@@ -16,6 +16,7 @@ Works with Douyin, Xiaohongshu, YouTube, Bilibili, and X (Twitter). Video and au
 - **See every step**: before starting, v2t lists the steps. While running, it shows what it is doing. If something fails, it says why in plain words.
 - **Ready to use**: export TXT, SRT, Markdown, or JSON. Drop the SRT straight into a video editor.
 - **On your phone too**: an Android preview app downloads videos and transcribes on the phone.
+- **English interface**: one click switches the whole page between Chinese and English.
 
 ## Three steps
 
@@ -23,7 +24,7 @@ Works with Douyin, Xiaohongshu, YouTube, Bilibili, and X (Twitter). Video and au
 2. Double-click **「打开视频转文字.command」** in the project folder.
 3. Paste a link → pick what you need → start. Download the results when it finishes.
 
-The app's buttons are in Chinese; the demo above has English captions.
+The page is in Chinese by default. Click **English** at the top right to switch the whole page to English (and **中文** to switch back). Your choice is remembered.
 
 ## How it works
 
@@ -97,11 +98,11 @@ The first transcription downloads a speech model, so it takes longer.
 
 v2t works without any account. Some videos or captions are only available when logged in. For those, v2t can borrow the login from Chrome on your computer:
 
-- **YouTube, Bilibili** (Mac only): log in to Chrome, then turn on the 「使用 Chrome 里的 … 登录状态」 (Use Chrome login) switch on the page. It appears after you paste a link from one of these sites. Chrome is never read while it is off. macOS may ask whether to allow access to "Chrome Safe Storage"; click Allow.
+- **YouTube, Bilibili** (Mac only): log in to Chrome, then turn on the **Use the YouTube login in Chrome** (or Bilibili) switch on the page. It appears after you paste a link from one of these sites. Chrome is never read while it is off. macOS may ask whether to allow access to "Chrome Safe Storage"; click Allow.
 - **Douyin**: install the included Chrome extension first:
   1. Go to `chrome://extensions` in Chrome and turn on Developer mode (top right).
   2. Click "Load unpacked" and select the project's `chrome-connector` folder.
-  3. Open the app page in the same Chrome, turn on 「使用已登录的 Chrome 获取抖音视频和字幕」 (Use logged-in Chrome for Douyin), and wait for 「Chrome 已连接」 (Chrome connected).
+  3. Open the app page in the same Chrome, turn on **Use logged-in Chrome to get Douyin videos and captions**, and wait for **Chrome is connected**.
 - **X**: public posts only.
 
 Login data (cookies) is used only in memory on your computer, briefly. It is never saved to a file or uploaded. A login only gets what your account can already see.

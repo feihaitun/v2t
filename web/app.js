@@ -724,7 +724,7 @@
     finally { button.disabled = false; }
   });
   $("clearCacheBtn").addEventListener("click", async () => {
-    if (!confirm("清理所有本机任务记录和缓存？任务文件夹内的视频、字幕也会删除；你已另存到其他位置的文件不会删除。")) return;
+    if (!confirm(window.v2tI18n.tr("清理所有本机任务记录和缓存？任务文件夹内的视频、字幕也会删除；你已另存到其他位置的文件不会删除。"))) return;
     try {
       await api("/api/cache", { method: "DELETE" });
       clearView();
