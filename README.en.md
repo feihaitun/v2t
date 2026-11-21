@@ -113,6 +113,20 @@ Login data (cookies) is used only in memory on your computer, briefly. It is nev
 - **Download failed?** Run `./v2t.sh doctor` first. Platforms change often, and updating the downloader usually helps: `uv pip install --python .venv/bin/python -U "yt-dlp[default,curl-cffi]"`.
 - **Updated the code?** Press `Ctrl+C` to stop the old server, then run `./v2t.sh serve` again. Refreshing the page is not enough.
 
+## Versions
+
+Current version: **v0.3.0** (2026-11-20). See the [Releases](https://github.com/feihaitun/v2t/releases) page for what changed in each version.
+
+| Part | Version |
+|---|---|
+| Desktop (web app) | 0.3.0 |
+| Android | 0.1.0 preview |
+| Chrome extension (for Douyin) | 0.2.0-rc.1 |
+
+- The latest code is on the `main` branch; `git clone` gets the latest version.
+- Already installed? Run `git pull` in the project folder, then restart the app (see the FAQ above).
+- Need an older version? Find it under Releases or Tags and download its source code.
+
 ## Disclaimer
 
 - Only download and use content you have the right to use. Follow copyright law and each platform's terms.

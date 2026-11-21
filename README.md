@@ -111,6 +111,20 @@ uv pip install --python .venv/bin/python -r requirements.txt
 - **下载失败？** 先运行 `./v2t.sh doctor` 看看提示。平台经常改规则，更新一下下载组件常常就好了：`uv pip install --python .venv/bin/python -U "yt-dlp[default,curl-cffi]"`。
 - **更新了项目代码？** 先按 `Ctrl+C` 关掉旧的，再运行 `./v2t.sh serve`。只刷新网页不够。
 
+## 版本
+
+当前版本：**v0.3.0**（2026-11-20）。每一版更新了什么，看[发布页](https://github.com/feihaitun/v2t/releases)。
+
+| 部分 | 版本 |
+|---|---|
+| 电脑版（网页） | 0.3.0 |
+| 安卓版 | 0.1.0 预览 |
+| Chrome 扩展（抖音用） | 0.2.0-rc.1 |
+
+- 最新代码都在 `main` 分支，`git clone` 下来的就是最新版。
+- 已经装过、想更新：在项目文件夹里运行 `git pull`，再重新打开（见上面「常见问题」）。
+- 想用旧版本：在发布页或 Tags（标签）里找到那一版，下载它的源码。
+
 ## 声明
 
 - 请只下载、使用你有权使用的内容，遵守版权法和各平台的用户协议。

@@ -78,7 +78,7 @@ The Douyin Chrome connector requires the running web page; it has no correspondi
 
 ## Versions and updates
 
-The current branch is `codex/official-source-files`. The latest release tag remains `v0.2.0-rc.2`; the branch includes later fixes and X support. Python reports `0.2.0rc2`; the unchanged Chrome extension reports `0.2.0-rc.1`.
+Code lives on the `main` branch. Each release is tagged and listed on the [Releases](https://github.com/feihaitun/v2t/releases) page; `v0.3.0` is the latest. Version numbers: desktop app `0.3.0` (`v2t/__init__.py`), Android preview `0.1.0` (`android/app/build.gradle.kts`), Chrome extension `0.2.0-rc.1` (unchanged since that release).
 
 Restart the Python server after code changes. Reload the unpacked Chrome extension only when its code changes. The connector currently targets port 8765.
 
