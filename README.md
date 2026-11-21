@@ -61,7 +61,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 不登录也能用。有些视频或字幕要登录才拿得到，这时可以借用你电脑上 Chrome 的登录状态：
 
-- **YouTube、B站**（只支持 Mac）：在 Chrome 里登录好就行。取字幕或下载视频时，工具会自动试着借用登录状态，借不到就按没登录处理。Mac 可能弹窗问你是否允许读取「Chrome 安全存储」，点允许即可。
+- **YouTube、B站**（只支持 Mac）：先在 Chrome 里登录，再打开页面上的「使用 Chrome 里的 YouTube / B站 登录状态」开关（贴了这两个网站的链接才会出现）。不打开就不会读。Mac 可能弹窗问你是否允许读取「Chrome 安全存储」，点允许即可。
 - **抖音**：要先装一个配套的 Chrome 扩展：
   1. Chrome 地址栏输入 `chrome://extensions`，打开右上角「开发者模式」。
   2. 点「加载已解压的扩展程序」，选项目里的 `chrome-connector` 文件夹。

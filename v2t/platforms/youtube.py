@@ -1,4 +1,4 @@
-"""YouTube：普通模式使用公开字幕；原文件模式优先使用 Chrome 登录状态取中英文字幕和视频。"""
+"""YouTube：默认只用公开字幕和视频；打开「使用 Chrome 登录状态」后，先试 Chrome 登录。"""
 
 from __future__ import annotations
 
@@ -97,6 +97,7 @@ class YouTubeChromeSubtitles(Strategy):
     label = "从 Chrome 登录状态取 YouTube 中英文字幕"
     explain = "只读 Chrome 中 YouTube 的登录 Cookie，优先保存平台人工字幕，其次自动字幕；中英文分别保存。"
     needs = "login"
+    option_flag = "chrome_login"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:
         try:
@@ -109,7 +110,7 @@ class YouTubeChromeSubtitles(Strategy):
 class YouTubeGuestSubtitles(Strategy):
     key = "youtube_guest_subtitles"
     label = "读取 YouTube 公开的中英文字幕"
-    explain = "登录状态无法使用时，读取公开视频的人工或自动字幕，中英文分别保存。"
+    explain = "不登录，读取公开视频的人工或自动字幕，中英文分别保存。"
     needs = "none"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:
@@ -121,6 +122,7 @@ class YouTubeChromeMedia(Strategy):
     label = "从 Chrome 登录状态下载 YouTube 视频"
     explain = "只读 Chrome 中 YouTube 的登录 Cookie，在本机内存里交给 yt-dlp 下载完整视频。"
     needs = "login"
+    option_flag = "chrome_login"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:
         try:

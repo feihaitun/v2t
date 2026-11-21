@@ -52,7 +52,7 @@ Each task lives in `data/jobs/<id>/`. Web tasks run one at a time in a separate 
 
 ## Login and browser boundaries
 
-Bilibili and YouTube source-files strategies read only their own site's Chrome cookie rows, read-only, and pass cookies to download code in memory. Cookie values must not appear in options, CLI arguments, logs, or saved files.
+Bilibili and YouTube Chrome-login strategies are off by default. They run only when `chrome_login` is true (the web switch 「使用 Chrome 里的 … 登录状态」 or the CLI flag `--chrome-login`); otherwise they are listed as skipped and the guest strategies run. When enabled, they read only their own site's Chrome cookie rows, read-only, and pass cookies to download code in memory. Cookie values must not appear in options, CLI arguments, logs, or saved files.
 
 The Douyin connector uses the existing Chrome session without extracting credentials. It opens its own target-video tab and closes that tab after use. Local requests are video-specific, use one-time tokens, and expire after 35 seconds. Keep Origin/Host checks and media redirect validation. See the [connector documentation](../chrome-connector/README.md).
 
@@ -67,6 +67,7 @@ The server binds to `127.0.0.1`. Mobile/LAN access and Android installation are 
 ```bash
 ./v2t.sh run --keep-video "VIDEO_URL"
 ./v2t.sh run --official-only "VIDEO_URL"
+./v2t.sh run --chrome-login --keep-video "VIDEO_URL"
 ./v2t.sh run --no-subs --lang zh --prompt "names,terms" "VIDEO_URL"
 ./v2t.sh plan "VIDEO_URL"
 ./v2t.sh doctor

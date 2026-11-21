@@ -2,7 +2,7 @@
 
 - 下载音频不需要任何 cookie：yt-dlp 直接就能拿到全部音轨；
 - CC 字幕 / AI 字幕必须登录（SESSDATA）才给，访客 cookie 没用。普通模式仍走访客下载与本机转写；
-  用户明确开启原文件模式时，只读 Chrome 中 B站域名的登录 Cookie，保存平台原始字幕 JSON；
+  用户打开「使用 Chrome 登录状态」时，只读 Chrome 中 B站域名的登录 Cookie，保存平台原始字幕 JSON；
 - 浏览器兜底：页面里的 window.__playinfo__ 有音频地址，下载时必须带 Referer: https://www.bilibili.com/（不带会 403）；
 - b23.tv 短链接普通 HTTP 就能展开，但跳转地址里带着分享人的跟踪参数（buvid、mid），不记录、直接去掉。
 """
@@ -29,7 +29,7 @@ class BiliChromeSubtitles(Strategy):
     label = "从 Chrome 登录状态取 B站原字幕"
     explain = "只读 Chrome 中 B站的登录 Cookie，向 B站查询字幕并保存平台返回的原始 JSON。"
     needs = "login"
-    option_flag = "prefer_subtitles"
+    option_flag = "chrome_login"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:
         from ..douyin_cookie.cookies import CookieUnavailable, load_cookies
@@ -191,7 +191,7 @@ class BiliChromeMedia(Strategy):
     label = "从 Chrome 登录状态下载 B站视频"
     explain = "只读 Chrome 中 B站的登录 Cookie，在本机内存里交给 yt-dlp 下载完整视频。"
     needs = "login"
-    option_flag = "keep_video"
+    option_flag = "chrome_login"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:
         from ..douyin_cookie.cookies import CookieUnavailable, load_cookies

@@ -43,6 +43,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         keep_video=args.official_only or args.keep_video, official_only=args.official_only,
         initial_prompt=args.prompt or "", headed_browser=args.headed,
         douyin_cookie_subtitles=args.douyin_cookie_subtitles, douyin_cookie_profile=args.douyin_cookie_profile,
+        chrome_login=args.chrome_login,
     )
     job = jobs.Job.create(value, options, kind)
     print(f"任务 {job.id}（网页上也能看到：http://127.0.0.1:{config.DEFAULT_PORT}/#job={job.id}）")
@@ -67,7 +68,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_plan(args: argparse.Namespace) -> int:
     plan = make_plan(args.input, config.Options(allow_thirdparty=args.thirdparty,
-                                               douyin_cookie_subtitles=args.douyin_cookie_subtitles))
+                                               douyin_cookie_subtitles=args.douyin_cookie_subtitles,
+                                               chrome_login=args.chrome_login))
     print(f"平台：{plan['platform']['label']}")
     for i, step in enumerate(plan["steps"], 1):
         print(f"\n{i}. {step['title']} —— {step['explain']}")
@@ -128,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--douyin-cookie-profile", default="", help="Chrome 用户配置目录名，默认最近使用的配置")
     p.add_argument("--no-subs", action="store_true", help="不用平台字幕，强制下载转写")
     p.add_argument("--thirdparty", action="store_true", help="允许用第三方解析网站兜底")
+    p.add_argument("--chrome-login", action="store_true", help="YouTube / B站：先试 Chrome 里的登录状态（默认不用）")
     p.add_argument("--keep-video", action="store_true", help="下载完整视频（默认只要音频）")
     p.add_argument("--official-only", action="store_true", help="只下载平台原字幕和完整视频，不运行 Whisper")
     p.add_argument("--prompt", help="给 Whisper 的提示词：人名、专业词")
@@ -140,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("input")
     p.add_argument("--douyin-cookie-subtitles", action="store_true")
     p.add_argument("--thirdparty", action="store_true")
+    p.add_argument("--chrome-login", action="store_true")
     p.set_defaults(func=cmd_plan)
 
     p = sub.add_parser("doctor", help="环境自检")

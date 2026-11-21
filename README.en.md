@@ -62,7 +62,7 @@ Platform captions are used first. Speech-to-text only runs when there are none. 
 
 v2t works without any account. Some videos or captions are only available when logged in. For those, v2t can borrow the login from Chrome on your computer:
 
-- **YouTube, Bilibili** (Mac only): just be logged in to Chrome. When getting captions or downloading a video, v2t tries the Chrome login automatically and falls back to logged-out mode if that fails. macOS may ask whether to allow access to "Chrome Safe Storage"; click Allow.
+- **YouTube, Bilibili** (Mac only): log in to Chrome, then turn on the 「使用 Chrome 里的 … 登录状态」 (Use Chrome login) switch on the page. It appears after you paste a link from one of these sites. Chrome is never read while it is off. macOS may ask whether to allow access to "Chrome Safe Storage"; click Allow.
 - **Douyin**: install the included Chrome extension first:
   1. Go to `chrome://extensions` in Chrome and turn on Developer mode (top right).
   2. Click "Load unpacked" and select the project's `chrome-connector` folder.

@@ -53,6 +53,14 @@
       </fieldset>
       <p id="modeHint" class="muted small" aria-live="polite"></p>
       <p id="platformHint" class="muted small" hidden></p>
+      <div class="cookie-module" id="loginModule" hidden>
+        <label class="switch" for="optChromeLogin">
+          <input type="checkbox" id="optChromeLogin" aria-describedby="loginHint">
+          <span class="track"><span class="thumb"></span></span>
+          <span class="switch-label" id="loginLabel">使用 Chrome 里的登录状态</span>
+        </label>
+        <p id="loginHint" class="muted small" aria-live="polite"></p>
+      </div>
       <div class="cookie-module" id="chromeModule" hidden>
         <label class="switch" for="optDouyinChrome">
           <input type="checkbox" id="optDouyinChrome" aria-describedby="chromeHint">

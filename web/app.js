@@ -136,6 +136,7 @@
     load("v2t.officialOnly") === "1" || load("v2t.keepVideo") === "1" ? "video" : "text";
   document.querySelector(`input[name="outputMode"][value="${initialMode}"]`).checked = true;
   $("optDouyinChrome").checked = load("v2t.douyinChrome") === "1";
+  $("optChromeLogin").checked = load("v2t.chromeLogin") === "1";
   let chromeConnected = false;
   function syncMode() {
     const mode = MODES[selectedMode()];
@@ -147,9 +148,15 @@
     $("modeHint").textContent = !mode.videoOnly && $("optForce").checked
       ? "在本机重新识别声音，生成字幕。" : mode.hint;
     const site = state.platform === "bilibili" ? "B站" : state.platform === "youtube" ? "YouTube" : null;
-    $("platformHint").hidden = !site;
-    $("platformHint").textContent = site
-      ? `可使用 Chrome 中 ${site} 的登录状态。` + (mode.videoOnly ? "" : "有中英文平台字幕时，会分别保存。") : "";
+    $("platformHint").hidden = !site || mode.videoOnly;
+    $("platformHint").textContent = site && !mode.videoOnly ? "有中英文平台字幕时，会分别保存。" : "";
+    $("loginModule").hidden = !site;
+    if (site) {
+      $("loginLabel").textContent = `使用 Chrome 里的 ${site} 登录状态`;
+      $("loginHint").textContent = $("optChromeLogin").checked
+        ? `会先试 Chrome 里的 ${site} 登录，不行再按不登录处理。Mac 可能弹窗问是否允许读取「Chrome 安全存储」。`
+        : "已关闭：不登录，只用公开内容。";
+    }
     renderChromeOption();
   }
   document.querySelectorAll('input[name="outputMode"]').forEach((radio) => radio.addEventListener("change", () => {
@@ -167,6 +174,10 @@
       $("chromeStatus").textContent = chromeConnected ? "✓ Chrome 已连接，可以开始" : "尚未连接：请在 Chrome 打开此网页，并完成下面的一次性设置。";
     } catch (_) { chromeConnected = false; $("chromeStatus").textContent = "无法检查连接，请确认后台服务仍在运行。"; }
   }
+  $("optChromeLogin").addEventListener("change", () => {
+    store("v2t.chromeLogin", $("optChromeLogin").checked ? "1" : "0");
+    syncMode(); schedulePlan();
+  });
   $("optDouyinChrome").addEventListener("change", () => {
     store("v2t.douyinChrome", $("optDouyinChrome").checked ? "1" : "0");
     renderChromeOption(); schedulePlan();
@@ -183,6 +194,7 @@
       language: $("optLang").value,
       prefer_subtitles: !mode.videoOnly && !$("optForce").checked,
       douyin_chrome: $("optDouyinChrome").checked,
+      chrome_login: $("optChromeLogin").checked,
       douyin_cookie_subtitles: false,
       douyin_cookie_profile: "",
       keep_video: mode.keep,
@@ -217,7 +229,7 @@
       const o = options();
       const plan = await api("/api/plan?" + new URLSearchParams({
         input: v, prefer_subtitles: o.prefer_subtitles, allow_thirdparty: o.allow_thirdparty,
-        douyin_chrome: o.douyin_chrome, keep_video: o.keep_video,
+        douyin_chrome: o.douyin_chrome, chrome_login: o.chrome_login, keep_video: o.keep_video,
         official_only: o.official_only, subtitles_only: o.subtitles_only, video_only: o.video_only, language: o.language,
       }));
       if (version !== planVersion) return;

@@ -38,6 +38,7 @@ class Options:
     douyin_cookie_subtitles: bool = False  # 独立可选模块：用 Chrome 的抖音 Cookie 查字幕
     douyin_cookie_profile: str = ""  # 空 = Chrome 最近使用的配置；不保存 Cookie 值
     douyin_chrome: bool = False  # 从正常登录的 Chrome 页面读取资料（独立连接器）
+    chrome_login: bool = False   # YouTube / B站：读 Chrome 里的登录 Cookie（默认关）
     allow_thirdparty: bool = False   # 允许把链接交给第三方解析网站（默认关）
     keep_video: bool = False         # 保留下载的视频文件（默认只留音频）
     official_only: bool = False      # 只取平台字幕和完整视频，不运行 Whisper
@@ -53,6 +54,7 @@ class Options:
         # API 只接受真正的布尔值授权；字符串 "false" 不能误开启账号访问。
         known["douyin_cookie_subtitles"] = data.get("douyin_cookie_subtitles") is True
         known["douyin_chrome"] = data.get("douyin_chrome") is True
+        known["chrome_login"] = data.get("chrome_login") is True
         known["official_only"] = data.get("official_only") is True
         known["subtitles_only"] = data.get("subtitles_only") is True
         known["video_only"] = data.get("video_only") is True

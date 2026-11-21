@@ -151,12 +151,14 @@ def api_doctor(refresh: int = 0) -> dict:
 
 @app.get("/api/plan")
 def api_plan(input: str, prefer_subtitles: bool = True, allow_thirdparty: bool = False,
-             douyin_cookie_subtitles: bool = False, douyin_chrome: bool = False, keep_video: bool = False,
+             douyin_cookie_subtitles: bool = False, douyin_chrome: bool = False, chrome_login: bool = False,
+             keep_video: bool = False,
              official_only: bool = False, subtitles_only: bool = False, video_only: bool = False,
              language: str = "auto") -> dict:
     opts = config.Options.from_dict({"language": language, "prefer_subtitles": prefer_subtitles, "allow_thirdparty": allow_thirdparty,
                                      "douyin_cookie_subtitles": douyin_cookie_subtitles,
-                                     "douyin_chrome": douyin_chrome, "keep_video": keep_video,
+                                     "douyin_chrome": douyin_chrome, "chrome_login": chrome_login,
+                                     "keep_video": keep_video,
                                      "official_only": official_only, "subtitles_only": subtitles_only,
                                      "video_only": video_only})
     try:
@@ -339,7 +341,7 @@ def api_transcribe_downloaded(job_id: str) -> dict:
         if source.dir.resolve() not in media.parents or not media.is_file() or media.suffix.lower() not in VIDEO_EXTS | AUDIO_EXTS:
             raise HTTPException(409, "已下载的视频文件找不到了")
         opts = config.Options.from_dict({**data.get("options", {}), "official_only": False,
-                                         "prefer_subtitles": False, "douyin_chrome": False,
+                                         "prefer_subtitles": False, "douyin_chrome": False, "chrome_login": False,
                                          "douyin_cookie_subtitles": False, "allow_thirdparty": False,
                                          "keep_video": True})
         job = jobs.Job.create(str(media), opts, "file")
