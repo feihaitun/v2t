@@ -1,7 +1,4 @@
 """几个平台都能用的「办法」：yt-dlp 读字幕、yt-dlp 直接下载、真浏览器抓视频地址。
-
-注：曾经设想的「访客 cookie 交给 yt-dlp」实测（2026-10-11）对抖音无效（抖音每个请求要现场签名），
-其他三个平台又根本不需要 cookie，所以没有做成单独的办法。
 """
 
 from __future__ import annotations
@@ -62,7 +59,7 @@ class YtdlpDirect(Strategy):
         out = _dl_dir(ctx, self.key)
         path = ytdlp.download_media(ctx.url, out, at, keep_video=ctx.options.keep_video)
         ctx.remember_info(ytdlp.read_info_json(out))
-        info = ensure_ok_media(path, at)
+        info = ensure_ok_media(path, at, require_audio=not ctx.options.video_only)
         if ctx.options.keep_video and not info["has_video"]:
             raise StrategyFailed("这次只拿到了音频，没有画面；接下来换办法下载完整视频")
         ctx.media_path, ctx.media_strategy = path, self.key
@@ -144,7 +141,7 @@ class BrowserGrab(Strategy):
             dest = out / f"media{ext}"
             try:
                 path = download_url(cand["url"], dest, at, referer=self.referer or final_url, cookies=cookies)
-                info = ensure_ok_media(path, at)
+                info = ensure_ok_media(path, at, require_audio=not ctx.options.video_only)
                 if ctx.options.keep_video and not info["has_video"]:
                     raise StrategyFailed("这个地址只提供音频，没有视频画面")
             except StrategyFailed as exc:

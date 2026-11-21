@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import math
 import re
 import shutil
+import time
 from http.cookiejar import Cookie
 from pathlib import Path
 
@@ -36,6 +38,7 @@ def usable_formats(formats: list[dict]) -> list[dict]:
     return [f for f in formats or [] if f.get("protocol") != "m3u8_native" and (f.get("url") or f.get("data"))]
 
 _ERROR_MAP = [
+    (r"HTTP Error 567", "平台下载地址返回 HTTP 567，当前地址暂时不可用，请稍后重试。"),
     (r"Fresh cookies", "抖音要求每个请求都带一个现场计算的签名，yt-dlp 目前算不出来，所以被拒了。"
                        "带访客 cookie 也没用（2026-10 实测）；不登录能下的办法是「专用浏览器打开抖音页面」。"),
     (r"Sign in to confirm|not a bot", "YouTube 怀疑是机器人，要求登录验证。"),
@@ -87,6 +90,67 @@ class _Logger:
         self.errors.append(msg)
         if self.attempt and not self.sensitive:
             self.attempt.log(msg, level="debug")
+
+
+class _DownloadProgress:
+    """只记录字节数、速度和剩余时间，不转发下载地址或账号资料。"""
+
+    def __init__(self, attempt: AttemptCtx):
+        self.attempt = attempt
+        self._last_update = float("-inf")
+        self._file = None
+
+    @staticmethod
+    def _number(value) -> float | None:
+        if type(value) not in (int, float):
+            return None
+        try:
+            value = float(value)
+        except OverflowError:
+            return None
+        return value if math.isfinite(value) and value >= 0 else None
+
+    @staticmethod
+    def _size(value: float) -> str:
+        return f"{value / 1_000_000:.1f} MB" if value >= 1_000_000 else f"{value / 1000:.1f} KB"
+
+    def download(self, data: dict) -> None:
+        status = data.get("status")
+        if status not in ("downloading", "finished"):
+            return
+        # filename 仅用来区分音轨和画面，不写入日志或任务状态。
+        file = data.get("filename")
+        now = time.monotonic()
+        if status == "downloading" and file == self._file and now - self._last_update < 2:
+            return
+        self._file, self._last_update = file, now
+        downloaded = self._number(data.get("downloaded_bytes"))
+        if status == "finished":
+            message = "一段媒体下载完成"
+            if downloaded is not None:
+                message += f"（{self._size(downloaded)}）"
+            self.attempt.progress(message + "，正在处理其余音轨或整理文件…")
+            return
+        if downloaded is None:
+            return
+        total = self._number(data.get("total_bytes"))
+        estimated = not total
+        total = total or self._number(data.get("total_bytes_estimate"))
+        message = f"正在下载：{self._size(downloaded)}"
+        if total:
+            message += f" / {'约 ' if estimated else ''}{self._size(total)}（{min(downloaded / total * 100, 100):.1f}%）"
+        speed = self._number(data.get("speed"))
+        if speed is not None:
+            message += f"，{self._size(speed)}/秒"
+        eta = self._number(data.get("eta"))
+        if eta is not None:
+            seconds = math.ceil(eta)
+            message += f"，预计还需 {seconds // 60} 分 {seconds % 60} 秒"
+        self.attempt.progress(message)
+
+    def postprocess(self, data: dict) -> None:
+        if data.get("status") == "started" and data.get("postprocessor") == "Merger":
+            self.attempt.progress("画面和声音已下载，正在合并成完整视频…")
 
 
 def _put_cookies_in_memory(ydl, cookies: list[dict]) -> None:
@@ -277,7 +341,8 @@ def download_subtitle(info: dict, choice: dict, out_dir: Path, attempt: AttemptC
 
 def download_media(url: str, out_dir: Path, attempt: AttemptCtx, cookies: Path | None = None,
                    keep_video: bool = False, audio_format: str = "ba[ext=m4a]/ba/b",
-                   extra_args: list[str] | None = None, site_cookies: list[dict] | None = None) -> Path:
+                   extra_args: list[str] | None = None, site_cookies: list[dict] | None = None,
+                   http_chunk_size: int | None = None) -> Path:
     """下载音频（或视频）。默认只要音频：文件小、下得快。"""
     out_dir.mkdir(parents=True, exist_ok=True)
     fmt = "bv*+ba/b" if keep_video else audio_format
@@ -285,6 +350,7 @@ def download_media(url: str, out_dir: Path, attempt: AttemptCtx, cookies: Path |
         import yt_dlp
 
         logger = _Logger(attempt, sensitive=True)
+        progress = _DownloadProgress(attempt)
         opts = {
             "quiet": True, "no_warnings": False, "ignoreconfig": True,
             "noplaylist": True, "playlist_items": "1", "format": fmt,
@@ -292,7 +358,9 @@ def download_media(url: str, out_dir: Path, attempt: AttemptCtx, cookies: Path |
             "merge_output_format": "mp4" if keep_video else None,
             "writeinfojson": True, "writethumbnail": False,
             "updatetime": False, "socket_timeout": 20, "retries": 3,
+            "http_chunk_size": http_chunk_size,
             "sleep_interval_requests": 0.75, "ffmpeg_location": config.FFMPEG,
+            "progress_hooks": [progress.download], "postprocessor_hooks": [progress.postprocess],
             "logger": logger, **js_runtime_opts(),
         }
         attempt.log("yt-dlp 使用 Chrome 中当前站点的登录状态下载媒体；Cookie 只在本机内存中使用")
@@ -320,6 +388,8 @@ def download_media(url: str, out_dir: Path, attempt: AttemptCtx, cookies: Path |
         "--write-info-json", "--no-write-playlist-metafiles",
         *js_runtime_args(), *(extra_args or []),
     ]
+    if http_chunk_size:
+        cmd += ["--http-chunk-size", str(http_chunk_size)]
     if keep_video:
         cmd += ["--merge-output-format", "mp4"]
     if cookies:

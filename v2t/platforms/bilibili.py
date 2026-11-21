@@ -20,12 +20,16 @@ from .base import Ctx, Platform, Strategy, ensure_ok_media
 from .common import BrowserGrab, _dl_dir
 
 
+# 部分 B 站媒体节点对没有 Range 的 GET 返回 567。分段下载让 yt-dlp 从第一段就带上 Range。
+_MEDIA_CHUNK_SIZE = 8 * 1024 * 1024
+
+
 class BiliChromeSubtitles(Strategy):
     key = "bili_chrome_subtitles"
     label = "从 Chrome 登录状态取 B站原字幕"
     explain = "只读 Chrome 中 B站的登录 Cookie，向 B站查询字幕并保存平台返回的原始 JSON。"
     needs = "login"
-    option_flag = "official_only"
+    option_flag = "prefer_subtitles"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:
         from ..douyin_cookie.cookies import CookieUnavailable, load_cookies
@@ -173,9 +177,9 @@ class BiliYtdlpAudio(Strategy):
         out = _dl_dir(ctx, self.key)
         audio_format = "bv*+ba/b" if ctx.options.keep_video else "wa[vcodec=none]/ba"
         path = ytdlp.download_media(ctx.url, out, at, audio_format=audio_format,
-                                    keep_video=ctx.options.keep_video)
+                                    keep_video=ctx.options.keep_video, http_chunk_size=_MEDIA_CHUNK_SIZE)
         ctx.remember_info(ytdlp.read_info_json(out))
-        ensure_ok_media(path, at)
+        ensure_ok_media(path, at, require_video=ctx.options.keep_video, require_audio=not ctx.options.video_only)
         ctx.media_path, ctx.media_strategy = path, self.key
         kind = "完整视频" if ctx.options.keep_video else "音频"
         ctx.media_how = f"yt-dlp 直接下载{kind}（没用任何 cookie）"
@@ -187,7 +191,7 @@ class BiliChromeMedia(Strategy):
     label = "从 Chrome 登录状态下载 B站视频"
     explain = "只读 Chrome 中 B站的登录 Cookie，在本机内存里交给 yt-dlp 下载完整视频。"
     needs = "login"
-    option_flag = "official_only"
+    option_flag = "keep_video"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:
         from ..douyin_cookie.cookies import CookieUnavailable, load_cookies
@@ -197,9 +201,10 @@ class BiliChromeMedia(Strategy):
         except CookieUnavailable:
             raise StrategyFailed("Chrome 中没有可读取的 B站登录状态；接下来试访客下载", expected=True) from None
         out = _dl_dir(ctx, self.key)
-        path = ytdlp.download_media(ctx.url, out, at, keep_video=True, site_cookies=cookies)
+        path = ytdlp.download_media(ctx.url, out, at, keep_video=True, site_cookies=cookies,
+                                    http_chunk_size=_MEDIA_CHUNK_SIZE)
         ctx.remember_info(ytdlp.read_info_json(out))
-        ensure_ok_media(path, at)
+        ensure_ok_media(path, at, require_video=True, require_audio=not ctx.options.video_only)
         ctx.media_path, ctx.media_strategy = path, self.key
         ctx.media_how = "用 Chrome 中 B站的登录状态下载完整视频"
         at.success(f"下载好了完整视频：{path.stat().st_size / 1e6:.1f}MB")

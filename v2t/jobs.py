@@ -1,6 +1,6 @@
 """任务记录：每个任务一个文件夹，job.json 记状态，events.jsonl 记后台每一步。
 
-前端和命令行都只读这两个文件，所以不管任务是从网页、命令行还是 Claude 发起的，
+前端和命令行都只读这两个文件，所以不管任务是从网页还是命令行发起的，
 都能在网页上看到同样的步骤和日志。
 """
 
@@ -74,7 +74,6 @@ class Job:
         self._seq = self._count_events()
         self.listeners: list = []  # 命令行用：每条事件回调一次
 
-    # ---------- 创建 / 读取 ----------
     @classmethod
     def create(cls, user_input: str, options: config.Options, input_type: str) -> "Job":
         config.ensure_dirs()
@@ -115,7 +114,6 @@ class Job:
     def id(self) -> str:
         return self.data["id"]
 
-    # ---------- 持久化 ----------
     def save(self) -> None:
         with self._lock:
             self.data["updated_at"] = now_iso()
@@ -128,6 +126,26 @@ class Job:
             self.data.update(fields)
             self.save()
 
+    def mark_interrupted(self, reason: str, ended_at: str | None = None) -> None:
+        """工作进程已退出时，同时结束任务和仍显示运行中的步骤。"""
+        ended_at = ended_at or now_iso()
+
+        def elapsed(record: dict) -> float | None:
+            try:
+                return round(max(0, (datetime.fromisoformat(ended_at) -
+                                     datetime.fromisoformat(record["started_at"])).total_seconds()), 2)
+            except (KeyError, TypeError, ValueError):
+                return None
+
+        with self._lock:
+            for step in self.data.get("steps", []):
+                if step.get("status") == "running":
+                    step.update(status="failed", summary=reason, ended_at=ended_at, duration=elapsed(step))
+                for attempt in step.get("attempts", []):
+                    if attempt.get("status") == "running":
+                        attempt.update(status="failed", message=reason, ended_at=ended_at, duration=elapsed(attempt))
+            self.update(status="failed", error=reason, elapsed=elapsed(self.data))
+
     def _count_events(self) -> int:
         path = self.dir / "events.jsonl"
         if not path.exists():
@@ -135,7 +153,6 @@ class Job:
         with path.open(encoding="utf-8") as fh:
             return sum(1 for _ in fh)
 
-    # ---------- 日志事件 ----------
     def emit(
         self,
         type_: str,
@@ -174,7 +191,6 @@ class Job:
                 pass
         return event
 
-    # ---------- 步骤 ----------
     def step(self, key: str) -> "StepCtx":
         return StepCtx(self, key)
 
@@ -389,6 +405,11 @@ class AttemptCtx:
 
     def log(self, msg: str, level: str = "debug", **detail: Any) -> None:
         self.job.emit("log", msg, level=level, step=self.step.key, strategy=self.strategy.key, extra=detail)
+
+    def progress(self, message: str) -> None:
+        self.rec["message"] = message
+        self.job.save()
+        self.job.emit("attempt_progress", message, step=self.step.key, strategy=self.strategy.key)
 
 
 def _plain_error(exc: BaseException) -> tuple[str, dict]:

@@ -25,17 +25,40 @@
     resolve: "认链接", subtitles: "找现成字幕", media: "拿视频/音频",
     audio: "抽音频", transcribe: "语音转文字", output: "整理输出",
   };
-  const STATUS_TEXT = { queued: "排队中", running: "进行中", done: "完成", failed: "失败" };
+  const STATUS_TEXT = { queued: "准备开始", running: "进行中", done: "完成", failed: "已结束" };
   const STEP_ICON = { done: "✓", failed: "✕", skipped: "–", running: "…" };
 
   let lastHighlighted = -1;
   const state = {
     dev: false, jobId: null, es: null, lastSeq: 0, events: [], job: null,
-    refreshTimer: null, resultFor: null, planTimer: null, historyTimer: null,
-    segments: [], liveCount: 0,
+    refreshTimer: null, resultFor: null, planTimer: null,
+    segments: [], liveCount: 0, ready: false, submitting: false, platform: null,
   };
+  const sessionId = crypto.randomUUID();
+  let previousSession = null;
+  try {
+    previousSession = sessionStorage.getItem("v2t.page");
+    sessionStorage.setItem("v2t.page", sessionId);
+  } catch (_) { /* 无痕模式仍可以手动停止 */ }
+  function resetSession(id, closed = false) {
+    return api("/api/session/reset", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: id, closed }) });
+  }
+  window.addEventListener("pagehide", () => {
+    navigator.sendBeacon("/api/session/reset", new Blob([JSON.stringify({ session_id: sessionId, closed: true })],
+      { type: "application/json" }));
+  });
+  function busy() {
+    return state.submitting || (state.jobId && (!state.job || ["queued", "running"].includes(state.job.status)));
+  }
+  function updateControls() {
+    $("startBtn").disabled = !state.ready || !!busy() || !$("input").value.trim();
+    $("clearTaskBtn").hidden = !state.jobId;
+    $("clearTaskBtn").textContent = busy() ? "停止并清理" : "清除本次";
+    $("clearCacheBtn").disabled = !!busy();
+    $("modePicker").disabled = !!busy();
+  }
 
-  // ---------------------------------------------------------------- 工具
   async function api(path, opts) {
     const r = await fetch(path, opts);
     if (!r.ok) {
@@ -57,7 +80,6 @@
   function store(key, val) { try { localStorage.setItem(key, val); } catch (_) { /* 无痕模式 */ } }
   function load(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
 
-  // ---------------------------------------------------------------- 开发模式
   state.dev = load("v2t.dev") === "1";
   $("devToggle").checked = state.dev;
   document.body.classList.toggle("dev", state.dev);
@@ -70,7 +92,6 @@
     if (state.job) renderJob();
   });
 
-  // ---------------------------------------------------------------- 环境自检
   async function loadDoctor(refresh) {
     const pill = $("doctorPill");
     pill.className = "pill pill-wait";
@@ -97,42 +118,50 @@
   $("doctorRefresh").addEventListener("click", () => loadDoctor(true));
   $("doctorModal").addEventListener("click", (e) => { if (e.target === $("doctorModal")) $("doctorModal").hidden = true; });
 
-  // 登录状态留在 Chrome，网页只保存这个功能的开关偏好。
-  $("optDouyinChrome").checked = load("v2t.douyinChrome") === "1";
-  $("optKeep").checked = load("v2t.keepVideo") === "1";
-  $("optOfficial").checked = load("v2t.officialOnly") === "1";
-  let priorOfficialOptions = null;
-  function syncOfficialOption() {
-    const on = $("optOfficial").checked;
-    if (on) {
-      if (!priorOfficialOptions) priorOfficialOptions = { subs: $("optSubs").checked, keep: $("optKeep").checked };
-      $("optSubs").checked = true;
-      $("optKeep").checked = true;
-    } else if (priorOfficialOptions) {
-      $("optSubs").checked = priorOfficialOptions.subs;
-      $("optKeep").checked = priorOfficialOptions.keep;
-      priorOfficialOptions = null;
-    }
-    $("optSubs").disabled = on;
-    $("optKeep").disabled = on;
-    $("optThird").disabled = on;
-    $("startBtn").textContent = on ? "下载平台原字幕和视频" :
-      $("optKeep").checked ? "开始下载视频和字幕" : "开始转文字";
+  // 一种用途对应一组选项，避免几个勾选互相覆盖。
+  const MODES = {
+    download: { keep: true, videoOnly: true, button: "下载视频",
+      hint: "只下载完整视频。" },
+    video: { keep: true, videoOnly: false, button: "下载视频和字幕",
+      hint: "字幕优先用平台已有的；没有时在本机识别声音。" },
+    text: { keep: false, videoOnly: false, button: "生成字幕",
+      hint: "字幕优先用平台已有的；没有时在本机识别声音。" },
+  };
+  function selectedMode() {
+    return document.querySelector('input[name="outputMode"]:checked').value;
   }
-  $("optOfficial").addEventListener("change", () => {
-    store("v2t.officialOnly", $("optOfficial").checked ? "1" : "0");
-    syncOfficialOption(); renderChromeOption(); schedulePlan();
-  });
-  syncOfficialOption();
+  const savedMode = load("v2t.mode");
+  const migratedMode = savedMode === "captions" ? "text" : savedMode === "original" ? "video" : savedMode;
+  const initialMode = Object.hasOwn(MODES, migratedMode) ? migratedMode :
+    load("v2t.officialOnly") === "1" || load("v2t.keepVideo") === "1" ? "video" : "text";
+  document.querySelector(`input[name="outputMode"][value="${initialMode}"]`).checked = true;
+  $("optDouyinChrome").checked = load("v2t.douyinChrome") === "1";
   let chromeConnected = false;
+  function syncMode() {
+    const mode = MODES[selectedMode()];
+    $("optForce").disabled = mode.videoOnly;
+    $("forceOption").hidden = mode.videoOnly;
+    $("promptOption").hidden = mode.videoOnly;
+    $("languageOption").hidden = mode.videoOnly;
+    $("startBtn").textContent = mode.button;
+    $("modeHint").textContent = !mode.videoOnly && $("optForce").checked
+      ? "在本机重新识别声音，生成字幕。" : mode.hint;
+    const site = state.platform === "bilibili" ? "B站" : state.platform === "youtube" ? "YouTube" : null;
+    $("platformHint").hidden = !site;
+    $("platformHint").textContent = site
+      ? `可使用 Chrome 中 ${site} 的登录状态。` + (mode.videoOnly ? "" : "有中英文平台字幕时，会分别保存。") : "";
+    renderChromeOption();
+  }
+  document.querySelectorAll('input[name="outputMode"]').forEach((radio) => radio.addEventListener("change", () => {
+    store("v2t.mode", selectedMode());
+    syncMode(); schedulePlan();
+  }));
   async function renderChromeOption() {
+    $("chromeModule").hidden = state.platform !== "douyin";
     const on = $("optDouyinChrome").checked;
     $("chromeSettings").hidden = !on;
-    $("chromeHint").textContent = on
-      ? ($("optOfficial").checked ? "已开启：从正常登录的 Chrome 查抖音原字幕；没有原字幕也不会转录。" :
-        "已开启：直接从正常登录的 Chrome 取视频和字幕；没有原字幕就自动在本机转写。")
-      : "已关闭：按原来的访客流程处理，不访问已登录的 Chrome。";
-    if (!on) return;
+    $("chromeHint").textContent = on ? "使用当前 Chrome 的抖音登录状态。" : "使用公开链接下载。";
+    if (!on || state.platform !== "douyin") return;
     try {
       chromeConnected = (await api("/api/chrome/status")).connected;
       $("chromeStatus").textContent = chromeConnected ? "✓ Chrome 已连接，可以开始" : "尚未连接：请在 Chrome 打开此网页，并完成下面的一次性设置。";
@@ -142,41 +171,43 @@
     store("v2t.douyinChrome", $("optDouyinChrome").checked ? "1" : "0");
     renderChromeOption(); schedulePlan();
   });
-  $("optKeep").addEventListener("change", () => {
-    store("v2t.keepVideo", $("optKeep").checked ? "1" : "0");
-    syncOfficialOption();
-    schedulePlan();
-  });
-  syncOfficialOption();
+  syncMode();
   $("openChromeBtn").addEventListener("click", () => api("/api/chrome/open", {method:"POST"}).catch(e => { $("chromeStatus").textContent=e.message; }));
   $("chromeFolderBtn").addEventListener("click", () => api("/api/chrome/folder", {method:"POST"}).catch(e => { $("chromeStatus").textContent=e.message; }));
   setInterval(() => { if ($("optDouyinChrome").checked) renderChromeOption(); }, 3000);
   renderChromeOption();
 
-  // ---------------------------------------------------------------- 预计步骤
   function options() {
+    const mode = MODES[selectedMode()];
     return {
       language: $("optLang").value,
-      prefer_subtitles: $("optSubs").checked,
+      prefer_subtitles: !mode.videoOnly && !$("optForce").checked,
       douyin_chrome: $("optDouyinChrome").checked,
       douyin_cookie_subtitles: false,
       douyin_cookie_profile: "",
-      keep_video: $("optKeep").checked,
-      official_only: $("optOfficial").checked,
+      keep_video: mode.keep,
+      official_only: false,
+      subtitles_only: false,
+      video_only: mode.videoOnly,
       allow_thirdparty: $("optThird").checked,
       initial_prompt: $("optPrompt").value,
       headed_browser: state.dev && $("optHeaded").checked,
     };
   }
 
+  let planVersion = 0;
   function schedulePlan() {
+    planVersion++;
     clearTimeout(state.planTimer);
     state.planTimer = setTimeout(updatePlan, 400);
   }
 
   async function updatePlan() {
+    const version = ++planVersion;
     const v = $("input").value.trim();
     if (!v) {
+      state.platform = null;
+      syncMode();
       $("planCard").hidden = true;
       $("startBtn").disabled = true;
       $("inputMsg").textContent = "";
@@ -187,12 +218,16 @@
       const plan = await api("/api/plan?" + new URLSearchParams({
         input: v, prefer_subtitles: o.prefer_subtitles, allow_thirdparty: o.allow_thirdparty,
         douyin_chrome: o.douyin_chrome, keep_video: o.keep_video,
-        official_only: o.official_only,
+        official_only: o.official_only, subtitles_only: o.subtitles_only, video_only: o.video_only, language: o.language,
       }));
+      if (version !== planVersion) return;
       renderPlan(plan);
-      $("startBtn").disabled = false;
+      updateControls();
       $("inputMsg").textContent = plan.input_type === "url" ? "认出链接：" + plan.value : "本地文件：" + plan.value;
     } catch (e) {
+      if (version !== planVersion) return;
+      state.platform = null;
+      syncMode();
       $("planCard").hidden = true;
       $("startBtn").disabled = true;
       $("inputMsg").textContent = "⚠️ " + e.message;
@@ -204,10 +239,12 @@
   }
 
   function renderPlan(plan) {
+    state.platform = plan.platform.key;
+    syncMode();
     $("planPlatform").textContent = plan.platform.label;
     $("planWarn").hidden = !plan.warning;
     $("planWarn").textContent = plan.warning ? "⚠️ " + plan.warning : "";
-    $("planSteps").replaceChildren(...plan.steps.map((st) => h("li", {},
+    $("planSteps").replaceChildren(...plan.steps.filter((st) => !st.skipped).map((st) => h("li", {},
       h("div", { class: "p-title" }, st.title),
       h("div", { class: "p-explain" }, st.explain),
       st.note ? h("div", { class: "p-note" }, "→ " + st.note) : null,
@@ -220,9 +257,10 @@
     $("planCard").hidden = false;
   }
 
-  ["input", "optSubs", "optThird"].forEach((id) => $(id).addEventListener(id === "input" ? "input" : "change", schedulePlan));
+  ["input", "optLang", "optForce", "optThird"].forEach((id) => $(id).addEventListener(id === "input" ? "input" : "change", () => {
+    syncMode(); schedulePlan();
+  }));
 
-  // ---------------------------------------------------------------- 拖文件进来
   const ta = $("input");
   ta.addEventListener("dragover", (e) => { e.preventDefault(); ta.classList.add("drag"); });
   ta.addEventListener("dragleave", () => ta.classList.remove("drag"));
@@ -231,19 +269,23 @@
     ta.classList.remove("drag");
     const file = e.dataTransfer.files && e.dataTransfer.files[0];
     if (!file) return;
+    if (busy() || !state.ready) return;
+    state.submitting = true;
+    updateControls();
     $("inputMsg").textContent = `正在把 ${file.name}（${(file.size / 1e6).toFixed(1)}MB）存到本机任务目录…`;
     try {
-      const r = await api("/api/upload?name=" + encodeURIComponent(file.name), { method: "PUT", body: file });
+      const r = await api("/api/upload?" + new URLSearchParams({name: file.name, session_id: sessionId}), { method: "PUT", body: file });
       ta.value = r.path;
       updatePlan();
     } catch (err) {
       $("inputMsg").textContent = "⚠️ 上传失败：" + err.message;
-    }
+    } finally { state.submitting = false; updateControls(); }
   });
 
-  // ---------------------------------------------------------------- 开始
   $("startBtn").addEventListener("click", async () => {
-    $("startBtn").disabled = true;
+    if (busy() || !state.ready) return;
+    state.submitting = true;
+    updateControls();
     try {
       if ($("optDouyinChrome").checked && /douyin\.com|iesdouyin\.com/.test($("input").value)) {
         await renderChromeOption();
@@ -251,19 +293,19 @@
       }
       const job = await api("/api/jobs", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: $("input").value, options: options() }),
+        body: JSON.stringify({ input: $("input").value, options: options(), session_id: sessionId }),
       });
       $("planCard").hidden = true;
       openJob(job.id);
-      loadHistory();
+      loadCache();
     } catch (e) {
       $("inputMsg").textContent = "⚠️ " + e.message;
     } finally {
-      $("startBtn").disabled = false;
+      state.submitting = false;
+      updateControls();
     }
   });
 
-  // ---------------------------------------------------------------- 任务详情
   function openJob(id) {
     if (state.es) state.es.close();
     Object.assign(state, { jobId: id, lastSeq: 0, events: [], job: null, resultFor: null, segments: [], liveCount: 0 });
@@ -278,7 +320,7 @@
     if (location.hash !== "#job=" + id) history.replaceState(null, "", "#job=" + id);
     refreshJob();
     connectStream();
-    markHistory();
+    updateControls();
     $("jobCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -293,13 +335,13 @@
     es.addEventListener("end", () => {
       es.close();
       refreshJob();
-      loadHistory();
+      loadCache();
     });
     let lostTimer = null;
     es.onopen = () => {
       clearTimeout(lostTimer);
       lostTimer = null;
-      if (!$("connWarn").hidden) { $("connWarn").hidden = true; refreshJob(); loadHistory(); }
+      if (!$("connWarn").hidden) { $("connWarn").hidden = true; refreshJob(); loadCache(); }
     };
     es.onerror = () => {
       // 断线时浏览器会自动重连（重复的事件靠 seq 去重）；断太久就告诉你
@@ -380,6 +422,7 @@
 
   function renderJob() {
     const job = state.job;
+    updateControls();
     $("jobTitle").textContent = job.title || job.input;
     const meta = [job.platform_label, job.duration ? "时长 " + fmtTime(job.duration) : null,
       "创建于 " + dateTs(job.created_at), job.elapsed ? `用时 ${job.elapsed} 秒` : null,
@@ -388,7 +431,7 @@
       job.url && job.url !== job.title ? h("div", {}, job.url) : null].filter(Boolean));
     const badge = $("jobStatus");
     badge.className = "badge " + job.status;
-    badge.textContent = STATUS_TEXT[job.status] || job.status;
+    badge.textContent = job.result?.no_subtitles ? "未找到平台字幕" : job.result?.media_error ? "仅字幕完成，视频失败" : (STATUS_TEXT[job.status] || job.status);
     $("retryBtn").hidden = !(job.status === "failed" || job.status === "done");
     const canTranscribe = job.status === "done" && job.options?.official_only &&
       job.result?.source === "platform_assets" && !job.result?.segments && job.result?.files?.media;
@@ -398,7 +441,7 @@
     const how = $("jobHow");
     if (job.result) {
       how.hidden = false;
-      how.replaceChildren(h("b", {}, "文字怎么来的："), job.result.how);
+      how.replaceChildren(h("b", {}, job.options?.video_only ? "获取方式：" : "文字怎么来的："), job.result.how);
     } else {
       how.hidden = true;
     }
@@ -456,7 +499,6 @@
           h("span", { class: "muted small" }, p.enabled ? "还没轮到（前面的办法失败了才会用）" : p.disabled_reason)))));
   }
 
-
   function renderAttempt(a) {
     const icon = { ok: "✅", failed: "❌", skipped: "⏭", running: "⏳", unavailable: "ℹ️" }[a.status] || "•";
     return h("li", { class: "attempt " + a.status },
@@ -491,8 +533,8 @@
       const name = `${(job.title || "media").replace(/[\\/:*?"<>|#\s]+/g, "_").slice(0, 60)}.${ext}`;
       return h("a", { href: base + files.media, download: name }, mediaIsVideo() ? "下载视频" : "下载音频");
     };
-    $("resultTitle").textContent = job.options?.official_only ? "平台原文件" : "文字稿";
-    if (!files.json && job.options?.official_only) {
+    $("resultTitle").textContent = job.options?.video_only ? "视频" : job.options?.subtitles_only ? "平台字幕" : job.options?.official_only ? "平台原文件" : "文字稿";
+    if (!files.json && (job.options?.video_only || job.options?.official_only || job.options?.subtitles_only)) {
       state.segments = [];
       state.plain = "";
       $("copyBtn").hidden = true;
@@ -609,22 +651,22 @@
     if (state.jobId) api(`/api/jobs/${state.jobId}/reveal`, { method: "POST" }).catch(() => {});
   });
   $("retryBtn").addEventListener("click", async () => {
-    if (!state.jobId) return;
-    const job = await api(`/api/jobs/${state.jobId}/retry`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      // 重试服从当前 Chrome 开关，不重新开启旧 Cookie 模块。
-      body: JSON.stringify({ options: {
-        ...($("optThird").checked ? { allow_thirdparty: true } : {}),
-        douyin_chrome: $("optDouyinChrome").checked,
-      douyin_cookie_subtitles: false,
-        douyin_cookie_profile: "",
-        prefer_subtitles: $("optSubs").checked,
-        keep_video: $("optKeep").checked,
-        official_only: $("optOfficial").checked,
-      } }),
-    });
-    openJob(job.id);
-    loadHistory();
+    if (!state.jobId || busy()) return;
+    state.submitting = true;
+    updateControls();
+    try {
+      const job = await api(`/api/jobs/${state.jobId}/retry`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, options: options() }),
+      });
+      openJob(job.id);
+      loadCache();
+    } catch (e) {
+      $("inputMsg").textContent = "⚠️ " + e.message;
+    } finally {
+      state.submitting = false;
+      updateControls();
+    }
   });
   $("transcribeBtn").addEventListener("click", async () => {
     if (!state.jobId) return;
@@ -633,7 +675,7 @@
     try {
       const job = await api(`/api/jobs/${state.jobId}/transcribe`, { method: "POST" });
       openJob(job.id);
-      loadHistory();
+      loadCache();
     } catch (e) {
       $("connWarn").textContent = "⚠️ 转录没开始：" + e.message;
       $("connWarn").hidden = false;
@@ -642,36 +684,53 @@
     }
   });
 
-  // ---------------------------------------------------------------- 历史
-  async function loadHistory() {
-    let list = [];
-    try { list = await api("/api/jobs"); } catch (_) { return; }
-    const icon = { done: "✅", failed: "❌", running: "⏳", queued: "🕓" };
-    $("history").replaceChildren(...(list.length ? list.map((j) => h("li", {
-      "data-id": j.id, class: j.id === state.jobId ? "active" : "", onclick: () => openJob(j.id),
-    },
-      h("div", { class: "h-title" }, `${icon[j.status] || ""} ${j.title || j.input}`),
-      h("div", { class: "h-meta" }, [j.platform_label, dateTs(j.created_at), j.status === "failed" ? "失败" : j.method]
-        .filter(Boolean).join(" · ")),
-    )) : [h("li", { class: "muted small" }, "还没有任务。贴一个链接试试。")]));
-    clearTimeout(state.historyTimer);
-    const busy = list.some((j) => j.status === "running" || j.status === "queued");
-    state.historyTimer = setTimeout(loadHistory, busy ? 4000 : 15000);
+  async function loadCache() {
+    try {
+      const data = await api("/api/cache");
+      $("cacheSize").textContent = `本机缓存：${(data.bytes / 1e6).toFixed(1)} MB（包含旧版记录）`;
+    } catch (_) { $("cacheSize").textContent = "暂时无法检查缓存"; }
   }
-  function markHistory() {
-    document.querySelectorAll("#history li[data-id]").forEach((li) =>
-      li.classList.toggle("active", li.dataset.id === state.jobId));
+  function clearView() {
+    if (state.es) state.es.close();
+    clearTimeout(state.refreshTimer);
+    Object.assign(state, { jobId: null, job: null, es: null, events: [], resultFor: null,
+      refreshTimer: null, segments: [], plain: "" });
+    $("playerWrap").replaceChildren();
+    $("jobCard").hidden = true;
+    history.replaceState(null, "", location.pathname);
+    updateControls();
   }
-  $("refreshHistory").addEventListener("click", loadHistory);
-
-  // ---------------------------------------------------------------- 启动
-  loadDoctor(false);
-  loadHistory();
-  const m = location.hash.match(/^#job=([\w-]+)/);
-  if (m) openJob(m[1]);
-  window.addEventListener("hashchange", () => {
-    const mm = location.hash.match(/^#job=([\w-]+)/);
-    if (mm && mm[1] !== state.jobId) { openJob(mm[1]); loadHistory(); }
+  $("clearTaskBtn").addEventListener("click", async () => {
+    const button = $("clearTaskBtn");
+    button.disabled = true;
+    try {
+      await resetSession(sessionId);
+      clearView();
+      $("inputMsg").textContent = "本次任务已结束，临时文件已清理。";
+      loadCache();
+    } catch (e) { $("inputMsg").textContent = "⚠️ " + e.message; }
+    finally { button.disabled = false; }
   });
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadHistory(); });
+  $("clearCacheBtn").addEventListener("click", async () => {
+    if (!confirm("清理所有本机任务记录和缓存？任务文件夹内的视频、字幕也会删除；你已另存到其他位置的文件不会删除。")) return;
+    try {
+      await api("/api/cache", { method: "DELETE" });
+      clearView();
+      loadCache();
+    } catch (e) { $("inputMsg").textContent = "⚠️ " + e.message; }
+  });
+
+  async function init() {
+    try {
+      const reload = performance.getEntriesByType("navigation")[0]?.type === "reload";
+      if (previousSession && reload) await resetSession(previousSession, true);
+      history.replaceState(null, "", location.pathname);
+      state.ready = true;
+      updateControls();
+      if ($("input").value.trim()) updatePlan();
+      loadCache();
+      loadDoctor(false);
+    } catch (e) { $("inputMsg").textContent = "⚠️ 上次任务未能清理，请刷新重试：" + e.message; }
+  }
+  init();
 })();

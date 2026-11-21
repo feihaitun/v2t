@@ -6,7 +6,6 @@ import asyncio
 import json
 import os
 import secrets
-import queue
 import re
 import shutil
 import subprocess
@@ -20,7 +19,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, doctor, jobs
 from .media import AUDIO_EXTS, VIDEO_EXTS
-from .pipeline import make_plan, parse_input, run_job
+from .pipeline import make_plan, parse_input
+from .task_runner import SingleTask
 
 app = FastAPI(title="v2t 视频转文字")
 
@@ -51,29 +51,47 @@ async def _only_local_pages(request: Request, call_next):
     return response
 
 
-_queue: "queue.Queue[str]" = queue.Queue()
-_state = {"current": None}
+_tasks = SingleTask()
+_closed_sessions: dict[str, float] = {}
+_uploads: set[str] = set()
 _doctor_cache: dict = {"t": 0.0, "data": None}
 _transcribe_lock = threading.Lock()
 
 
-# ---------------------------------------------------------------- 后台工作线程
-def _worker() -> None:
-    while True:
-        job_id = _queue.get()
-        _state["current"] = job_id
-        try:
-            run_job(jobs.Job.load(job_id))
-        except Exception as exc:  # 理论上 run_job 自己会兜底
-            print("worker error", exc)
-        finally:
-            _state["current"] = None
+def _require_idle() -> None:
+    if _tasks.current or _uploads:
+        raise HTTPException(409, "已有任务正在处理，请先点「停止」；不会加入队列")
+
+
+def _require_open(session_id: str) -> None:
+    if session_id in _closed_sessions:
+        raise HTTPException(409, '页面已关闭，本次请求已取消')
+
+
+def _session(body: dict) -> str | None:
+    value = body.get('session_id')
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,80}', value):
+        raise HTTPException(400, '页面标识无效，请刷新网页')
+    return value
+
+
+def _start(job: jobs.Job, session_id: str | None) -> dict:
+    job.update(runner='server', session_id=session_id, ephemeral=bool(session_id))
+    job.emit('job_queued', '准备开始（一次只处理一条）')
+    try:
+        _tasks.start(job)
+    except Exception:
+        job.mark_interrupted('任务没能启动，请重试')
+        raise
+    return job.data
 
 
 @app.on_event("startup")
 def _startup() -> None:
     config.ensure_dirs()
-    # 上次服务关掉时还没跑完的任务：排队中的重新排队，跑到一半的标记失败
+    # 不恢复队列。网页任务只属于本次页面，重启后由用户重新开始。
     for item in sorted(config.JOBS_DIR.glob("*/job.json")):
         try:
             data = json.loads(item.read_text(encoding="utf-8"))
@@ -84,11 +102,25 @@ def _startup() -> None:
             if pid and pid != os.getpid() and _alive(pid):
                 continue  # 别的进程（比如命令行）正在跑它，不要动
             job = jobs.Job.load(data["id"])
-            job.update(status="failed", error="服务中途重启，任务被打断了（可以点「重试」）")
+            job.mark_interrupted("服务中途重启，任务被打断了（可以点「重试」）")
             job.emit("job_end", "服务中途重启，任务被打断了", level="error", status="failed")
+        elif data.get("status") == "failed" and any(
+            row.get("status") == "running"
+            for step in data.get("steps", []) for row in [step, *step.get("attempts", [])]
+        ):
+            # 修正旧版本留下的「任务已失败，但步骤仍在运行」记录。
+            jobs.Job.load(data["id"]).mark_interrupted(
+                data.get("error") or "任务已中断", ended_at=data.get("updated_at"))
         elif data.get("status") == "queued" and data.get("runner") == "server":
-            _queue.put(data["id"])
-    threading.Thread(target=_worker, daemon=True).start()
+            jobs.Job.load(data['id']).mark_interrupted('服务已重启，旧排队任务已停止，请重新开始')
+        if data.get('ephemeral'):
+            _remove_job(data['id'])
+
+
+@app.on_event('shutdown')
+def _shutdown() -> None:
+    if _tasks.current:
+        _tasks.stop(_tasks.current)
 
 
 def _alive(pid: int) -> bool:
@@ -101,7 +133,6 @@ def _alive(pid: int) -> bool:
     return True
 
 
-# ---------------------------------------------------------------- 页面
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(config.WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
@@ -110,7 +141,6 @@ def index() -> FileResponse:
 app.mount("/static", StaticFiles(directory=config.WEB_DIR), name="static")
 
 
-# ---------------------------------------------------------------- 接口
 @app.get("/api/doctor")
 def api_doctor(refresh: int = 0) -> dict:
     if refresh or not _doctor_cache["data"] or time.time() - _doctor_cache["t"] > 300:
@@ -122,11 +152,13 @@ def api_doctor(refresh: int = 0) -> dict:
 @app.get("/api/plan")
 def api_plan(input: str, prefer_subtitles: bool = True, allow_thirdparty: bool = False,
              douyin_cookie_subtitles: bool = False, douyin_chrome: bool = False, keep_video: bool = False,
-             official_only: bool = False) -> dict:
-    opts = config.Options.from_dict({"prefer_subtitles": prefer_subtitles, "allow_thirdparty": allow_thirdparty,
+             official_only: bool = False, subtitles_only: bool = False, video_only: bool = False,
+             language: str = "auto") -> dict:
+    opts = config.Options.from_dict({"language": language, "prefer_subtitles": prefer_subtitles, "allow_thirdparty": allow_thirdparty,
                                      "douyin_cookie_subtitles": douyin_cookie_subtitles,
                                      "douyin_chrome": douyin_chrome, "keep_video": keep_video,
-                                     "official_only": official_only})
+                                     "official_only": official_only, "subtitles_only": subtitles_only,
+                                     "video_only": video_only})
     try:
         return make_plan(input, opts)
     except ValueError as exc:
@@ -135,7 +167,7 @@ def api_plan(input: str, prefer_subtitles: bool = True, allow_thirdparty: bool =
 
 @app.get("/api/status")
 def api_status() -> dict:
-    return {"current": _state["current"], "queued": _queue.qsize()}
+    return {"current": _tasks.current, "queued": 0}
 
 
 @app.get("/api/chrome/status")
@@ -179,11 +211,22 @@ async def api_create_job(request: Request) -> dict:
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
     options = config.Options.from_dict(body.get("options"))
-    job = jobs.Job.create(value, options, kind)
-    job.update(runner="server")
-    job.emit("job_queued", "任务已排队" + (f"（前面还有 {_queue.qsize()} 个）" if _queue.qsize() else ""))
-    _queue.put(job.id)
-    return job.data
+    session_id = _session(body)
+    if not session_id:
+        raise HTTPException(400, '页面已更新，请刷新网页后再开始')
+    with _tasks.lock:
+        _require_idle()
+        _require_open(session_id)
+        job = jobs.Job.create(value, options, kind)
+        if kind == 'file' and config.JOBS_DIR.resolve() in Path(value).resolve().parents:
+            source = job.dir / ('source_media' + Path(value).suffix)
+            try:
+                os.link(value, source)
+            except OSError:
+                shutil.copy2(value, source)
+            job.update(input=str(source))
+        _clear_session(session_id, keep_input=value)
+        return _start(job, session_id)
 
 
 @app.get("/api/jobs")
@@ -270,17 +313,16 @@ async def api_retry(job_id: str, request: Request) -> dict:
     except Exception:
         body = {}
     opts = {**(data.get("options") or {}), **((body or {}).get("options") or {})}
-    job = jobs.Job.create(data["input"], config.Options.from_dict(opts), data["input_type"])
-    job.update(runner="server")
-    job.emit("job_queued", f"重试任务 {job_id}")
-    _queue.put(job.id)
-    return job.data
+    with _tasks.lock:
+        _require_idle()
+        job = jobs.Job.create(data["input"], config.Options.from_dict(opts), data["input_type"])
+        return _start(job, _session(body))
 
 
 @app.post("/api/jobs/{job_id}/transcribe")
 def api_transcribe_downloaded(job_id: str) -> dict:
     """用已下载的视频新建本机转录任务，不再访问平台。"""
-    with _transcribe_lock:
+    with _transcribe_lock, _tasks.lock:
         source = jobs.Job.load(_job_dir(job_id).name)
         data = source.data
         result = data.get("result") or {}
@@ -289,6 +331,7 @@ def api_transcribe_downloaded(job_id: str) -> dict:
         existing = data.get("transcription_job_id")
         if existing and (config.JOBS_DIR / existing / "job.json").is_file():
             return jobs.Job.load(existing).data
+        _require_idle()
         rel = (result.get("files") or {}).get("media")
         if not isinstance(rel, str):
             raise HTTPException(409, "这条任务没有可转录的视频文件")
@@ -311,8 +354,8 @@ def api_transcribe_downloaded(job_id: str) -> dict:
                        source_platform_label=data.get("platform_label"),
                        source_platform_summary=result.get("platform_summary"))
             source.update(transcription_job_id=job.id)
-            job.emit("job_queued", f"用任务 {job_id} 已下载的视频在本机转录，不重新下载")
-            _queue.put(job.id)
+            job.emit("log", "用已下载视频转录，不重新下载")
+            _start(job, data.get('session_id'))
         except Exception:
             shutil.rmtree(job.dir, ignore_errors=True)
             raise
@@ -330,37 +373,121 @@ def api_reveal(job_id: str) -> dict:
 
 @app.delete("/api/jobs/{job_id}")
 def api_delete(job_id: str) -> dict:
-    path = _job_dir(job_id)
-    if _state["current"] == job_id:
-        raise HTTPException(409, "任务正在运行，不能删除")
-    data = api_job(job_id)
-    shutil.rmtree(path)
-    # 如果是网页拖进来的文件，顺手删掉那份上传的副本
-    src = Path(data.get("input") or "")
-    if data.get("input_type") == "file" and config.UPLOADS_DIR.resolve() in src.resolve().parents:
-        src.unlink(missing_ok=True)
+    with _tasks.lock:
+        if _tasks.current == job_id:
+            raise HTTPException(409, "任务正在运行，请先停止")
+        _remove_job(job_id)
     return {"ok": True}
 
 
+def _remove_job(job_id: str, keep_input: str | None = None) -> None:
+    path = _job_dir(job_id)
+    data = api_job(job_id)
+    if data.get('status') == 'running' and data.get('runner_pid') and _alive(data['runner_pid']):
+        raise HTTPException(409, '任务仍在运行，请先停止')
+    shutil.rmtree(path)
+    # 如果是网页拖进来的文件，顺手删掉那份上传的副本
+    src = Path(data.get("input") or "")
+    if (data.get("input_type") == "file" and str(src) != keep_input
+            and config.UPLOADS_DIR.resolve() in src.resolve().parents):
+        src.unlink(missing_ok=True)
+
+
+def _clear_session(session_id: str | None, keep_input: str | None = None) -> None:
+    if not session_id:
+        return
+    for path in config.JOBS_DIR.glob('*/job.json'):
+        data = json.loads(path.read_text())
+        if data.get('ephemeral') and data.get('session_id') == session_id:
+            if _tasks.current == data['id']:
+                _tasks.stop(data['id'])
+            _remove_job(data['id'], keep_input=keep_input)
+    for path in config.UPLOADS_DIR.glob(f'{session_id}-*'):
+        if path.is_file() and str(path) != keep_input:
+            path.unlink(missing_ok=True)
+
+
+@app.post('/api/session/reset')
+async def api_reset_session(request: Request) -> dict:
+    body = await request.json()
+    session_id = _session(body)
+    if not session_id:
+        raise HTTPException(400, '缺少页面标识')
+    with _tasks.lock:
+        if body.get('closed') is True:
+            now = time.monotonic()
+            for key, ended in list(_closed_sessions.items()):
+                if now - ended > 3600:
+                    _closed_sessions.pop(key, None)
+            _closed_sessions[session_id] = now
+        _clear_session(session_id)
+    return {'ok': True}
+
+
+@app.post('/api/jobs/{job_id}/stop')
+def api_stop(job_id: str) -> dict:
+    with _tasks.lock:
+        _tasks.stop(job_id)
+    return api_job(job_id)
+
+
+@app.get('/api/cache')
+def api_cache() -> dict:
+    size = 0
+    for root in (config.JOBS_DIR, config.UPLOADS_DIR):
+        for path in root.rglob('*'):
+            try:
+                if path.is_file():
+                    size += path.stat().st_size
+            except OSError:
+                pass  # 下载或清理可能正好替换临时文件。
+    return {'jobs': len(list(config.JOBS_DIR.glob('*/job.json'))), 'bytes': size}
+
+
+@app.delete('/api/cache')
+def api_clear_cache() -> dict:
+    with _tasks.lock:
+        _require_idle()
+        paths = list(config.JOBS_DIR.glob('*/job.json'))
+        for path in paths:
+            data = json.loads(path.read_text())
+            if data.get('status') == 'running' and data.get('runner_pid') and _alive(data['runner_pid']):
+                raise HTTPException(409, '还有任务在运行，请先停止再清理')
+        for path in paths:
+            _remove_job(path.parent.name)
+        for path in config.UPLOADS_DIR.iterdir():
+            if path.is_file():
+                path.unlink()
+    return {'ok': True, 'removed_jobs': len(paths)}
+
+
 @app.put("/api/upload")
-async def api_upload(request: Request, name: str) -> dict:
+async def api_upload(request: Request, name: str, session_id: str) -> dict:
     """网页拖进来的本地视频：存到 data/uploads/ 下，然后当本地文件处理。"""
     safe = re.sub(r"[^\w.\-\u4e00-\u9fff ]", "_", Path(name).name)[:120] or "upload.mp4"
+    _session({'session_id': session_id})
     config.ensure_dirs()
     length = int(request.headers.get("content-length") or 0)
     if length and shutil.disk_usage(config.UPLOADS_DIR).free < length + (1 << 30):
         raise HTTPException(507, "磁盘空间不够了，先清理一下再拖进来")
-    dest = config.UPLOADS_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}-{safe}"
+    dest = config.UPLOADS_DIR / f"{session_id}-{secrets.token_hex(3)}-{safe}"
     part = dest.with_name(dest.name + ".part")
     size = 0
+    with _tasks.lock:
+        _require_idle()
+        _require_open(session_id)
+        _uploads.add(session_id)
     try:
         with part.open("wb") as fh:
             async for chunk in request.stream():
+                _require_open(session_id)
                 fh.write(chunk)
                 size += len(chunk)
     except BaseException:
         part.unlink(missing_ok=True)  # 传到一半断了：不留半截文件
         raise
+    finally:
+        _uploads.discard(session_id)
     if size == 0:
         part.unlink(missing_ok=True)
         raise HTTPException(400, "文件是空的")

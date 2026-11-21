@@ -191,7 +191,7 @@ def _download_from_note(ctx: Ctx, at: AttemptCtx, note: dict, key: str, how: str
     for url in [s["masterUrl"], *(s.get("backupUrls") or [])]:
         try:
             path = download_url(url, out / "media.mp4", at)
-            ensure_ok_media(path, at)
+            ensure_ok_media(path, at, require_audio=not ctx.options.video_only)
         except StrategyFailed as exc:
             errors.append(exc.reason)
             continue
@@ -212,9 +212,9 @@ class XhsYtdlp(Strategy):
         from .. import ytdlp
 
         out = _dl_dir(ctx, self.key)
-        path = ytdlp.download_media(ctx.url, out, at, audio_format="wa/w")
+        path = ytdlp.download_media(ctx.url, out, at, audio_format="wa/w", keep_video=ctx.options.keep_video)
         ctx.remember_info(ytdlp.read_info_json(out))
-        ensure_ok_media(path, at)
+        ensure_ok_media(path, at, require_audio=not ctx.options.video_only)
         ctx.media_path, ctx.media_strategy = path, self.key
         ctx.media_how = "yt-dlp 直接下载（没用 cookie）"
         at.success(f"下载好了：{path.name}")

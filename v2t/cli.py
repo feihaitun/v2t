@@ -1,11 +1,4 @@
-"""命令行入口。
-
-  ./v2t.sh run <链接或文件> [--lang zh] [--no-subs] [--thirdparty] [--dev]   转一个视频
-  ./v2t.sh plan <链接或文件>                                              只看预计步骤
-  ./v2t.sh doctor                                                       环境自检
-  ./v2t.sh serve [--port 8765] [--no-open]                               打开网页界面
-  ./v2t.sh jobs                                                        最近的任务
-"""
+"""命令行入口。用法：./v2t.sh --help"""
 
 from __future__ import annotations
 

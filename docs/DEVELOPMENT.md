@@ -48,7 +48,7 @@ chrome-connector/      Optional desktop Chrome extension for Douyin
 web/                   Local web interface
 ```
 
-Each task lives in `data/jobs/<id>/`. `job.json` stores status and options; `events.jsonl` stores events. Caption source files and downloaded media stay alongside the generated transcripts. The temporary 16 kHz audio file is removed after successful transcription. Local jobs, browser profiles, uploads, and `.venv/` are ignored by Git.
+Each task lives in `data/jobs/<id>/`. Web tasks run one at a time in a separate process group, with no queue. Each page has a fresh session ID; reset/close cancels its process tree and removes its temporary job files. A closed session cannot submit a delayed request. CLI jobs and legacy records remain until explicitly deleted. The Chrome broker stays in the web server and communicates with the job worker over a private socket pair. `job.json` stores status and options; `events.jsonl` stores events. Caption source files and downloaded media stay alongside the generated transcripts. The temporary 16 kHz audio file is removed after successful transcription. Local jobs, browser profiles, uploads, and `.venv/` are ignored by Git.
 
 ## Login and browser boundaries
 

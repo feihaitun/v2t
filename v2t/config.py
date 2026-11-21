@@ -41,6 +41,8 @@ class Options:
     allow_thirdparty: bool = False   # 允许把链接交给第三方解析网站（默认关）
     keep_video: bool = False         # 保留下载的视频文件（默认只留音频）
     official_only: bool = False      # 只取平台字幕和完整视频，不运行 Whisper
+    subtitles_only: bool = False     # 只取平台已有字幕，没有字幕就结束
+    video_only: bool = False         # 只下载完整视频，不查字幕或转写
     initial_prompt: str = ""         # 给 Whisper 的提示词：人名、专业词
     headed_browser: bool = False     # 浏览器步骤是否弹出窗口（调试用）
 
@@ -52,7 +54,19 @@ class Options:
         known["douyin_cookie_subtitles"] = data.get("douyin_cookie_subtitles") is True
         known["douyin_chrome"] = data.get("douyin_chrome") is True
         known["official_only"] = data.get("official_only") is True
-        if known["official_only"]:
+        known["subtitles_only"] = data.get("subtitles_only") is True
+        known["video_only"] = data.get("video_only") is True
+        if known["video_only"]:
+            known["official_only"] = False
+            known["subtitles_only"] = False
+            known["prefer_subtitles"] = False
+            known["keep_video"] = True
+        elif known["subtitles_only"]:
+            known["official_only"] = False
+            known["prefer_subtitles"] = True
+            known["keep_video"] = False
+            known["allow_thirdparty"] = False
+        elif known["official_only"]:
             known["prefer_subtitles"] = True
             known["keep_video"] = True
         profile = known.get("douyin_cookie_profile", "")
@@ -61,6 +75,10 @@ class Options:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    @property
+    def platform_subtitles(self) -> bool:
+        return self.official_only or self.subtitles_only
 
 
 def ensure_dirs() -> None:

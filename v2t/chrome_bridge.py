@@ -106,13 +106,13 @@ class Broker:
             p['result'] = normalize(payload, p['video_id'])
             p['event'].set()
 
-    def request(self, video_id, timeout=35):
+    def request(self, video_id, timeout=35, cancelled=None):
         if not self.status()['connected']:
             return {'status': 'not_connected'}
         p = {'video_id': video_id, 'token': secrets.token_urlsafe(32), 'claimed': None,
              'event': threading.Event(), 'deadline': time.monotonic()+timeout}
         with self.lock:
-            if self.pending:
+            if self.pending or (cancelled is not None and cancelled.is_set()):
                 return {'status': 'failed'}
             self.pending = p
         try:
@@ -121,6 +121,13 @@ class Broker:
             with self.lock:
                 if self.pending is p:
                     self.pending = None
+
+    def cancel(self):
+        with self.lock:
+            if self.pending:
+                self.pending['result'] = {'status': 'failed'}
+                self.pending['event'].set()
+                self.pending = None
 
 
 broker = Broker()
@@ -189,7 +196,7 @@ class ChromeSubtitles(Strategy):
                 continue
             if segments:
                 raw_file = None
-                if ctx.options.official_only:
+                if ctx.options.platform_subtitles:
                     if raw_bytes is None:
                         raw_bytes = json.dumps(content, ensure_ascii=False).encode('utf-8')
                     ext = 'json'
@@ -204,8 +211,11 @@ class ChromeSubtitles(Strategy):
                                 'how': '抖音平台字幕（从已登录的 Chrome 获取）', 'raw_file': raw_file}
                 at.success(f'拿到平台字幕：{len(segments)} 段')
                 return
-        next_step = '继续下载完整视频，不转录' if ctx.options.official_only else '接下来下载并在本机转写'
-        raise StrategyFailed(f'Chrome 已交回视频资料，但没有可用字幕 → {next_step}', expected=True)
+        message = 'Chrome 已交回视频资料，但没有可用字幕'
+        if not ctx.options.subtitles_only:
+            next_step = '继续下载完整视频，不转录' if ctx.options.official_only else '接下来下载并在本机转写'
+            message += f' → {next_step}'
+        raise StrategyFailed(message, expected=True)
 
 
 class ChromeMedia(Strategy):
@@ -238,7 +248,7 @@ class ChromeMedia(Strategy):
         media = result['media']
         if ctx.options.keep_video:
             picture, info = get(media['combined']+media['video'], 'picture.mp4', 'video')
-            if info['has_audio']:
+            if info['has_audio'] or (ctx.options.video_only and not media['audio']):
                 dest = folder / 'media.mp4'
                 picture.replace(dest)
             else:
@@ -252,11 +262,11 @@ class ChromeMedia(Strategy):
                 if proc.returncode:
                     raise StrategyFailed('画面和声音合并失败')
             verified = probe(dest)
-            if not verified['has_audio'] or not verified['has_video']:
+            if not verified['has_video'] or (not ctx.options.video_only and not verified['has_audio']):
                 raise StrategyFailed('完整视频检查失败')
             for name in ('picture.mp4', 'sound.m4a'):
                 (folder / name).unlink(missing_ok=True)
-            label = '完整视频（画面和声音）'
+            label = '完整视频（画面和声音）' if verified['has_audio'] else '视频（无音轨）'
         else:
             dest, verified = get(media['audio']+media['combined'], 'media.m4a', 'audio')
             label = '音频'

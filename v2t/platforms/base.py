@@ -140,11 +140,14 @@ def wait_a_bit(seconds: float = 1.0) -> None:
     time.sleep(seconds)
 
 
-def ensure_ok_media(path: Path, at: AttemptCtx) -> dict:
+def ensure_ok_media(path: Path, at: AttemptCtx, *, require_video: bool = False,
+                    require_audio: bool = True) -> dict:
     from ..media import probe
 
     info = probe(path)
-    if not info["has_audio"]:
+    if require_audio and not info["has_audio"]:
         raise StrategyFailed("下载到的文件里没有声音轨道", {"probe": info})
+    if require_video and not info["has_video"]:
+        raise StrategyFailed("下载到的文件里只有声音，没有视频画面", {"probe": info})
     at.log(f"文件检查通过：{path.name}，时长 {info['duration'] or '?'} 秒，{info['codecs']}")
     return info

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from .jobs import Job, StepFailed, StepSkipped, StrategyFailed, now_iso
 from .media import AUDIO_EXTS, VIDEO_EXTS, extract_audio, human_duration, probe
 from .outputs import lang_name, to_simplified, write_all
 from .platforms import detect_platform
-from .platforms.base import Ctx, Platform
+from .platforms.base import Ctx, Platform, ensure_ok_media
 from .runner import run
 
 # 链接里不会出现中文（中文会被编码成 %xx），所以遇到第一个非 ASCII 字符就截断
@@ -27,7 +28,6 @@ BARE_RE = re.compile(
     r"v\.douyin\.com|iesdouyin\.com|xiaohongshu\.com|xhslink\.com)/[^\s<>\"'\u0080-\U0010ffff]+)")
 
 
-# ---------------------------------------------------------------- 输入识别
 def parse_input(raw: str) -> tuple[str, str]:
     """返回 (类型, 值)：('url', 链接) / ('file', 路径)。分享文案里夹着的链接也能认出来。"""
     raw = (raw or "").strip()
@@ -58,12 +58,16 @@ def make_plan(raw: str, options: config.Options | None = None) -> dict:
     kind, value = parse_input(raw)
     steps = []
 
-    def add(key: str, strategies: list | None = None, note: str | None = None) -> None:
+    def add(key: str, strategies: list | None = None, note: str | None = None,
+            skipped: bool = False) -> None:
         title, explain = STEP_DEFS[key]
         steps.append({"key": key, "title": title, "explain": explain,
-                      "strategies": strategy_dicts(strategies or [], options), "note": note})
+                      "strategies": strategy_dicts(strategies or [], options), "note": note,
+                      "skipped": skipped})
 
     if kind == "file":
+        if options.subtitles_only:
+            raise ValueError("只取平台字幕需要视频链接；本地文件请选择生成字幕")
         if options.official_only:
             raise ValueError("平台原文件模式需要 B站、抖音、YouTube 或 X 的视频链接")
         info = {}
@@ -72,9 +76,14 @@ def make_plan(raw: str, options: config.Options | None = None) -> dict:
         except StrategyFailed:
             pass
         add("resolve", note=f"本地文件，时长 {human_duration(info.get('duration'))}")
-        add("audio")
-        add("transcribe")
-        add("output")
+        if options.video_only:
+            add("audio", note="只保存视频", skipped=True)
+            add("transcribe", note="只保存视频", skipped=True)
+            add("output", note="提供本地完整视频")
+        else:
+            add("audio")
+            add("transcribe")
+            add("output")
         return {"input_type": "file", "value": value, "platform": {"key": "local", "label": "本地文件"},
                 "steps": steps}
 
@@ -82,18 +91,33 @@ def make_plan(raw: str, options: config.Options | None = None) -> dict:
     warning = None if platform.is_short(value) else (platform.collection_reason(value) or platform.url_warning(value))
     add("resolve", note="短链接会先展开" if platform.is_short(value) else None)
     subs = subtitle_strategies(platform, options)
-    if not options.prefer_subtitles:
+    if options.video_only:
+        add("subtitles", note="只下载视频", skipped=True)
+    elif not options.prefer_subtitles:
         add("subtitles", note="你选了「不用平台字幕，直接转写」，这一步会跳过")
+    elif options.subtitles_only:
+        add("subtitles", subs, note="有平台字幕就保存，没有就结束")
     elif subs:
         add("subtitles", subs, note="找到字幕后仍会下载完整视频，跳过转写" if options.keep_video else "找到字幕的话，下面下载和转写都会跳过")
     else:
         add("subtitles", note=platform.no_subtitle_reason)
-    add("media", media_strategies(platform, options), note="下载完整视频；按顺序试" if options.official_only else "按顺序试，前一种成功就不再试后面的")
-    if options.official_only:
+    if options.video_only:
+        add("media", media_strategies(platform, options), note="下载完整视频")
+        add("audio", note="只下载视频", skipped=True)
+        add("transcribe", note="只下载视频", skipped=True)
+        add("output", note="保存完整视频")
+    elif options.subtitles_only:
+        add("media", note="只取平台字幕，跳过下载视频和音频", skipped=True)
+        add("audio", note="只取平台字幕，跳过抽音频", skipped=True)
+        add("transcribe", note="只取平台字幕，跳过语音转写", skipped=True)
+        add("output", note="保存找到的平台字幕")
+    elif options.official_only:
+        add("media", media_strategies(platform, options), note="下载完整视频；按顺序试")
         add("audio", note="只要平台原文件，跳过抽音频")
         add("transcribe", note="只要平台原文件，不运行 Whisper")
         add("output", note="保存平台原字幕文件和完整视频；没有原字幕时仍保留视频")
     else:
+        add("media", media_strategies(platform, options), note="按顺序试，前一种成功就不再试后面的")
         add("audio")
         add("transcribe")
         add("output")
@@ -103,34 +127,35 @@ def make_plan(raw: str, options: config.Options | None = None) -> dict:
 
 def subtitle_strategies(platform: Platform, options: config.Options) -> list:
     """可选模块接入点：关掉开关或处理其他平台时，既不导入也不调用模块。"""
+    if options.video_only or not options.prefer_subtitles:
+        return []
     strategies = platform.subtitle_strategies()
-    if platform.key == "bilibili" and options.official_only:
+    if platform.key == "bilibili":
         from .platforms.bilibili import BiliChromeSubtitles
-        return [BiliChromeSubtitles()]
-    if platform.key == "youtube" and options.official_only:
+        return [BiliChromeSubtitles()] if options.platform_subtitles else [BiliChromeSubtitles(), *strategies]
+    if platform.key == "youtube":
         from .platforms.youtube import YouTubeChromeSubtitles, YouTubeGuestSubtitles
         return [YouTubeChromeSubtitles(), YouTubeGuestSubtitles()]
-    if platform.key == "douyin" and options.official_only:
+    if platform.key == "douyin":
         from .platforms.douyin import DouyinGuestSubtitles
         if options.douyin_chrome:
             from .chrome_bridge import ChromeSubtitles
             return [ChromeSubtitles(), DouyinGuestSubtitles()]
+        if options.douyin_cookie_subtitles and not options.platform_subtitles:
+            from .douyin_cookie import DouyinCookieSubtitles
+            return [DouyinCookieSubtitles()]
         return [DouyinGuestSubtitles()]
-    if platform.key == "douyin" and options.douyin_chrome and options.prefer_subtitles:
-        from .chrome_bridge import ChromeSubtitles
-        return [ChromeSubtitles(), *strategies]
-    if platform.key == "douyin" and options.douyin_cookie_subtitles and options.prefer_subtitles:
-        from .douyin_cookie import DouyinCookieSubtitles
-        return [DouyinCookieSubtitles(), *strategies]
     return strategies
 
 
 def media_strategies(platform: Platform, options: config.Options) -> list:
+    if options.subtitles_only:
+        return []
     strategies = platform.media_strategies()
-    if platform.key == "bilibili" and options.official_only:
+    if platform.key == "bilibili" and options.keep_video:
         from .platforms.bilibili import BiliChromeMedia
         return [BiliChromeMedia(), strategies[0]]
-    if platform.key == "youtube" and options.official_only:
+    if platform.key == "youtube" and options.keep_video:
         from .platforms.youtube import YouTubeChromeMedia
         return [YouTubeChromeMedia(), *strategies]
     if platform.key == "douyin" and options.official_only:
@@ -149,7 +174,6 @@ def strategy_dicts(strategies: list, options: config.Options) -> list[dict]:
     return items
 
 
-# ---------------------------------------------------------------- 主流程
 def run_job(job: Job) -> Job:
     options = config.Options.from_dict(job.data.get("options"))
     t0 = time.time()
@@ -159,6 +183,8 @@ def run_job(job: Job) -> Job:
     try:
         kind = job.data["input_type"]
         if kind == "file":
+            if options.subtitles_only:
+                raise StepFailed("只取平台字幕需要视频链接；本地文件请选择生成字幕")
             if options.official_only:
                 raise StepFailed("平台原文件模式需要 B站、抖音、YouTube 或 X 的视频链接")
             _resolve_file(ctx)
@@ -168,8 +194,17 @@ def run_job(job: Job) -> Job:
             _resolve_url(ctx)
             if options.official_only and ctx.platform.key not in ("bilibili", "douyin", "youtube", "twitter"):
                 raise StepFailed("平台原字幕和完整视频模式目前支持 B站、抖音、YouTube 和 X")
-            _find_subtitles(ctx)
-            if options.official_only:
+            if options.video_only:
+                job.skip_step("subtitles", "只下载视频")
+            else:
+                _find_subtitles(ctx)
+            if options.video_only:
+                _get_media(ctx)
+            elif options.subtitles_only:
+                job.skip_step("media", "只取平台字幕，跳过下载视频和音频")
+                job.skip_step("audio", "只取平台字幕，跳过抽音频")
+                job.skip_step("transcribe", "只取平台字幕，跳过语音转写")
+            elif options.official_only:
                 try:
                     _get_media(ctx)
                 except StepFailed as exc:
@@ -180,20 +215,26 @@ def run_job(job: Job) -> Job:
                 job.skip_step("transcribe", "只要平台原文件，不运行 Whisper")
             elif ctx.subtitle:
                 if options.keep_video:
-                    _get_media(ctx)
+                    try:
+                        _get_media(ctx)
+                    except StepFailed as exc:
+                        ctx.info["media_error"] = exc.reason
                 else:
                     job.skip_step("media", "已经拿到现成字幕，不用再下载")
                 for key in ("audio", "transcribe"):
                     job.skip_step(key, "已经拿到现成字幕，不用再下载和转写")
             else:
                 _get_media(ctx)
-        if not ctx.subtitle and not options.official_only:
+        if options.video_only:
+            job.skip_step("audio", "只下载视频")
+            job.skip_step("transcribe", "只下载视频")
+        elif not ctx.subtitle and not options.platform_subtitles:
             wav = _extract_audio(ctx)
             _transcribe(ctx, wav)
         _write_outputs(ctx, time.time() - t0)
         job.update(status="done", elapsed=round(time.time() - t0, 1))
         res = job.data["result"]
-        if options.official_only:
+        if options.platform_subtitles or options.video_only:
             job.emit("job_end", f"完成！{res['how']}。总用时 {job.data['elapsed']} 秒。", status="done")
         else:
             job.emit("job_end", f"🎉 完成！{res['how']}。共 {res['segments']} 段、{res['chars']} 字，总用时 "
@@ -228,8 +269,10 @@ def _resolve_file(ctx: Ctx) -> None:
             info = probe(path)
         except StrategyFailed as exc:
             raise StepFailed(exc.reason, exc.detail) from None
-        if not info["has_audio"]:
+        if not info["has_audio"] and not ctx.options.video_only:
             raise StepFailed("这个文件里没有声音，没法转文字")
+        if ctx.options.video_only and not info["has_video"]:
+            raise StepFailed("这个文件只有音频，请选择只要字幕")
         ctx.media_path = path
         from_download = bool(job.data.get("source_job_id"))
         ctx.media_how = "已经下载到本机的视频" if from_download else "本地文件"
@@ -333,7 +376,7 @@ def _find_subtitles(ctx: Ctx) -> None:
         return
     strategies = subtitle_strategies(ctx.platform, options)
     if not strategies:
-        job.skip_step("subtitles", ctx.platform.no_subtitle_reason)
+        job.skip_step("subtitles", "没有可查询的平台字幕" if options.subtitles_only else ctx.platform.no_subtitle_reason)
         return
     with job.step("subtitles") as st:
         st.info("会按顺序试：" + " → ".join(s.label for s in strategies))
@@ -350,11 +393,14 @@ def _find_subtitles(ctx: Ctx) -> None:
             if at.final:  # 内容本身拿不到（已删除 / 图文 / 私密），后面也不用试了
                 raise StepFailed(at.rec.get("message") or "内容拿不到")
         last = next((a.get("message") for a in reversed(st.rec["attempts"]) if a.get("message")), None)
+        if options.subtitles_only:
+            raise StepSkipped("没有找到可用的平台字幕")
         if options.official_only:
             raise StepSkipped(f"{last or '没有可用的平台原字幕'} → 接下来下载完整视频，不转录")
         if last and "转写" in last:
             raise StepSkipped(last)
-        raise StepSkipped(f"{last} → 接下来下载音频，自己转写" if last else "没有现成字幕 → 接下来下载音频，自己转写")
+        next_step = "下载完整视频并转写" if options.keep_video else "下载音频并转写"
+        raise StepSkipped(f"{last or '没有现成字幕'} → 接下来{next_step}")
 
 
 def _get_media(ctx: Ctx) -> None:
@@ -370,17 +416,22 @@ def _get_media(ctx: Ctx) -> None:
                 st.record_skipped_attempt(strategy, why)
                 continue
             with st.attempt(strategy) as at:
+                ctx.media_path = None
                 strategy.run(ctx, at)
+                if options.keep_video and ctx.media_path:
+                    ensure_ok_media(ctx.media_path, at, require_video=True,
+                                    require_audio=not options.video_only)
             if at.ok and ctx.media_path:
                 ctx.media_label = strategy.label
                 st.summary(f"用「{strategy.label}」拿到了：{ctx.media_how}")
                 return
+            ctx.media_path = None
             failures.append(f"{strategy.label}：{at.rec.get('message')}")
             if at.final:  # 内容本身拿不到（已删除 / 图文 / 私密），换办法也没用
                 raise StepFailed(at.rec.get("message") or "内容拿不到", {"failures": failures})
             time.sleep(1.0)  # 换下一种办法前稍等一下，对平台客气点
         hint = ""
-        if not options.allow_thirdparty and any(s.option_flag for s in strategies):
+        if not options.allow_thirdparty and any(s.option_flag == "allow_thirdparty" for s in strategies):
             hint = "（还可以在选项里打开「允许用第三方解析网站」再试一次）"
         raise StepFailed("所有办法都没拿到视频" + hint, {"failures": failures})
 
@@ -470,6 +521,31 @@ def _transcribe(ctx: Ctx, wav: Path) -> None:
 def _write_outputs(ctx: Ctx, elapsed: float) -> None:
     job = ctx.job
     with job.step("output") as st:
+        if ctx.options.keep_video and ctx.media_path and ctx.workdir not in ctx.media_path.parents:
+            destination = ctx.workdir / ("media" + ctx.media_path.suffix)
+            try:
+                os.link(ctx.media_path, destination)
+            except OSError:
+                shutil.copy2(ctx.media_path, destination)
+            ctx.media_path = destination
+        if ctx.options.video_only:
+            if not ctx.media_path:
+                raise StepFailed("没有取得完整视频")
+            how = "完整视频已保存"
+            job.update(result={"source": "media", "how": how, "method_short": "完整视频",
+                               "language": None, "language_label": "—", "segments": 0, "chars": 0,
+                               "files": {"media": str(ctx.media_path.relative_to(ctx.workdir))},
+                               "media_strategy": ctx.media_strategy, "media_has_video": True})
+            st.summary(how)
+            return
+        if ctx.options.subtitles_only and not ctx.subtitle:
+            how = "没有找到可用的平台字幕"
+            job.update(result={"source": "subtitles", "how": how, "method_short": "无平台字幕",
+                               "language": None, "language_label": "—", "segments": 0, "chars": 0,
+                               "files": {}, "no_subtitles": True,
+                               "platform_summary": ctx.info.get("platform_summary")})
+            st.summary(how)
+            return
         if ctx.options.official_only and not ctx.subtitle:
             files = {}
             media_has_video = None
@@ -493,6 +569,8 @@ def _write_outputs(ctx: Ctx, elapsed: float) -> None:
             how = f"文字来自{ctx.subtitle['how']}" + (f"；另已下载视频：{ctx.media_how}（无需转写）" if ctx.media_path else "（没有下载视频，也没有转写）")
             short = f"{ctx.subtitle['how']}"
             source = "subtitles"
+            if ctx.info.get('media_error'):
+                how = f"文字来自{ctx.subtitle['how']}；字幕已保存，视频下载失败：{ctx.info['media_error']}"
         else:
             w = ctx.info["whisper"]
             segments, language = w["segments"], w["language"]
@@ -540,6 +618,7 @@ def _write_outputs(ctx: Ctx, elapsed: float) -> None:
             "language_label": lang_name(language), "segments": len(segments), "chars": chars,
             "files": files | extra, "media_strategy": ctx.media_strategy,
             "media_has_video": media_has_video,
+            "media_error": ctx.info.get('media_error'),
             "platform_summary": ctx.info.get("platform_summary"),
             "caption_tracks": caption_tracks,
         })

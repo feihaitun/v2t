@@ -26,7 +26,7 @@ LOGIN_COOKIE_NAMES = {
 
 _UA_CACHE: dict = {}
 
-# 隐藏「我是自动化程序」的标记：不是为了破解什么，只是让页面像对普通访客一样正常加载
+# 去掉自动化标记，让页面按普通访客加载
 STEALTH_JS = "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
 
 

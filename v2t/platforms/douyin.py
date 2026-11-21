@@ -140,7 +140,7 @@ class DouyinGuestSubtitles(Strategy):
     label = "从抖音视频页查平台原字幕"
     explain = "读取抖音页面自己取得的视频详情；有字幕轨道时保存平台返回的原始文件。"
     needs = "visitor"
-    option_flag = "official_only"
+    option_flag = "prefer_subtitles"
 
     def run(self, ctx: Ctx, at: AttemptCtx) -> None:
         from ..chrome_bridge import fetch
@@ -174,7 +174,10 @@ class DouyinGuestSubtitles(Strategy):
                             "raw_file": path.name}
             at.success(f"保存了抖音平台原字幕：{len(segments)} 段")
             return
-        raise StrategyFailed("这个视频页没有返回可用的平台字幕；仍会下载完整视频", expected=True)
+        message = "这个视频页没有返回可用的平台字幕"
+        if not ctx.options.subtitles_only:
+            message += "；接下来下载完整视频" if ctx.options.keep_video else "；接下来下载音频转写"
+        raise StrategyFailed(message, expected=True)
 
 
 class DouyinBrowserDetail(Strategy):
@@ -225,7 +228,7 @@ class DouyinBrowserDetail(Strategy):
             dest = out / ("media.m4a" if what == "纯音频" else "media.mp4")
             try:
                 path = download_url(url, dest, at, referer="https://www.douyin.com/")
-                ensure_ok_media(path, at)
+                ensure_ok_media(path, at, require_audio=not ctx.options.video_only)
             except StrategyFailed as exc:
                 errors.append(f"{what}：{exc.reason}")
                 continue
@@ -265,7 +268,7 @@ class DouyinThirdParty(Strategy):
             try:
                 path = download_url(u, out / ("media.mp3" if ".mp3" in u else "media.mp4"), at,
                                     referer="https://dlpanda.com/")
-                ensure_ok_media(path, at)
+                ensure_ok_media(path, at, require_audio=not ctx.options.video_only)
             except StrategyFailed:
                 continue
             ctx.media_path, ctx.media_strategy = path, self.key

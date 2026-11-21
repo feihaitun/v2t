@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>视频转文字</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261024">
+  <link rel="stylesheet" href="/static/style.css?v=20261110-choices">
 </head>
 <body>
 <header class="topbar">
@@ -33,7 +33,27 @@
       <textarea id="input" rows="3" spellcheck="false"
         placeholder="粘贴视频链接（整段分享文案也行，会自动找出链接），或本机视频文件的路径…"></textarea>
       <div class="drop-hint" id="dropHint">也可以把视频 / 音频文件直接拖到上面这个框里</div>
-      <div class="cookie-module">
+      <p class="muted small">一次只处理一条。刷新或关闭本页会停止任务、清除本次临时文件；需要的结果请先点下载保存。</p>
+      <fieldset class="mode-picker" id="modePicker" aria-describedby="modeHint">
+        <legend>你要什么？</legend>
+        <div class="mode-choices">
+          <label class="mode-choice">
+            <input type="radio" name="outputMode" value="download">
+            <span><strong>只下载视频</strong><small>保存完整视频</small></span>
+          </label>
+          <label class="mode-choice">
+            <input type="radio" name="outputMode" value="video">
+            <span><strong>视频＋字幕</strong><small>完整视频和配套字幕</small></span>
+          </label>
+          <label class="mode-choice">
+            <input type="radio" name="outputMode" value="text" checked>
+            <span><strong>只要字幕</strong><small>保存字幕和文字稿</small></span>
+          </label>
+        </div>
+      </fieldset>
+      <p id="modeHint" class="muted small" aria-live="polite"></p>
+      <p id="platformHint" class="muted small" hidden></p>
+      <div class="cookie-module" id="chromeModule" hidden>
         <label class="switch" for="optDouyinChrome">
           <input type="checkbox" id="optDouyinChrome" aria-describedby="chromeHint">
           <span class="track"><span class="thumb"></span></span>
@@ -56,9 +76,9 @@
         </div>
       </div>
       <details class="options">
-        <summary>选项</summary>
+        <summary>更多设置</summary>
         <div class="opt-grid">
-          <label>语言
+          <label id="languageOption">语言
             <select id="optLang">
               <option value="auto">自动识别</option>
               <option value="zh">中文</option>
@@ -67,13 +87,10 @@
               <option value="yue">粤语</option>
             </select>
           </label>
-          <label class="check"><input type="checkbox" id="optSubs" checked> 有现成字幕就直接用（更快更准）</label>
-          <label class="check"><input type="checkbox" id="optKeep"> 下载完整视频（默认只要音频）</label>
-          <label class="check"><input type="checkbox" id="optOfficial"> 只下载平台字幕源文件和完整视频，不转录
-            <span class="muted">（支持抖音、B站、YouTube 和 X；B站和 YouTube 优先用 Chrome 登录状态；X 使用公开链接，没有原字幕就只交付视频）</span></label>
-          <label class="check"><input type="checkbox" id="optThird"> 允许用第三方解析网站兜底
-            <span class="muted">（会把链接发给别人的网站，默认关）</span></label>
-          <label class="wide">专业词提示（人名、术语，用逗号隔开，能减少同音错字）
+          <label class="check" id="forceOption"><input type="checkbox" id="optForce"> 重新识别声音（不用平台字幕）</label>
+          <label class="check" id="thirdOption"><input type="checkbox" id="optThird"> 允许第三方网站帮助下载
+            <span class="muted">（会把链接发给该网站，默认关闭）</span></label>
+          <label class="wide" id="promptOption">人名或专业词（可选，帮助识别声音）
             <input type="text" id="optPrompt" placeholder="例如：高斯, 拉马努金, Transformer">
           </label>
           <label class="check dev-only"><input type="checkbox" id="optHeaded"> 浏览器步骤显示窗口（调试用）</label>
@@ -81,6 +98,7 @@
       </details>
       <div class="input-actions">
         <button id="startBtn" class="primary" disabled>开始转文字</button>
+        <button id="clearTaskBtn" class="ghost" hidden>停止并清理</button>
         <span id="inputMsg" class="muted"></span>
       </div>
     </div>
@@ -155,34 +173,21 @@
     <details class="card explainer" id="explainer">
       <summary>它是怎么工作的？（大白话）</summary>
       <div class="explain-body">
-        <p><b>从视频里拿文字，现在有两个来源：</b>平台现成的字幕、视频里的声音。普通模式找不到平台字幕时，会在本机转录声音；「只下载平台原文件」模式会先停在视频结果，你可以点「用已下载视频转录」，不用重新下载。（画面上印着的字暂时还不读。）</p>
-        <ol>
-          <li><b>认链接</b>：看是哪个平台，短链接先展开，去掉分享人的跟踪参数。</li>
-          <li><b>找现成字幕</b>：普通模式先查平台字幕，找不到再转写。原文件模式下，YouTube 和 B站优先使用 Chrome 登录状态查找中英文字幕，分别保存平台原文件；抖音可开启专用的 Chrome 连接器。找到字幕后仍会下载完整视频。</li>
-          <li><b>拿视频/音频</b>：每个平台按「从快到稳」的顺序试几种办法，前一种失败就自动换下一种。你这个链接具体会试哪几种，上面「预计步骤」里写着：
-            <ul>
-              <li><b>抖音</b>：专用浏览器（从不登录）打开视频页，让页面自己去要视频地址 → 换一个全新的访客身份再试 → yt-dlp（备用，目前无效）→ 第三方解析网站（默认关闭）</li>
-              <li><b>小红书</b>：用「手机版网页」读视频地址（不登录、不带 cookie）→ 模拟 iPhone 的浏览器 → yt-dlp</li>
-              <li><b>B站</b>：原文件模式先用 Chrome 登录状态下载视频，再试访客下载；普通模式先访客下载音频</li>
-              <li><b>YouTube</b>：原文件模式先用 Chrome 登录状态下载视频，再试访客下载；普通模式使用访客下载</li>
-              <li><b>X / Twitter</b>：先查公开字幕，再下载完整视频；没有原字幕时可以手动转录</li>
-            </ul>
-          </li>
-          <li><b>抽音频</b>：ffmpeg 把声音抽出来。</li>
-          <li><b>语音转文字</b>：本机的 Whisper 模型转写，音频不上传。</li>
-          <li><b>整理输出</b>：生成 md / srt / txt / json，并记下这次是怎么拿到的。</li>
-        </ol>
-        <p class="muted">关闭 Chrome 开关时，原来的访客流程保持不变。开启后由连接器使用正常登录的 Chrome 打开目标视频，不再把 Cookie 搬到临时浏览器。下载完成后可以在结果区点「下载视频」「下载 srt」，或者点「打开文件夹」。所有记录都在 <code>data/jobs/任务编号/</code>。</p>
+        <p>平台字幕包括人工字幕和平台自动字幕。没有平台字幕时，可以在自己的电脑上识别声音。画面上印着的字暂时不识别。</p>
+        <ul>
+          <li><b>只下载视频</b>：保存完整视频。</li>
+          <li><b>视频＋字幕</b>：下载视频，优先取平台字幕；没有时识别声音生成字幕。</li>
+          <li><b>只要字幕</b>：优先取平台字幕；没有时识别声音生成字幕。</li>
+        </ul>
+        <p class="muted">下载完成后，请点「下载视频」「下载 srt」保存需要的文件。页面只保留本次结果；刷新、关闭页面或开始下一条会清除本次临时文件，不会删除你已另存的文件。</p>
       </div>
     </details>
   </section>
 
-  <aside class="side-col">
-    <div class="card">
-      <div class="card-title">历史任务 <button id="refreshHistory" class="link small">刷新</button></div>
-      <ul id="history" class="history"></ul>
-    </div>
-  </aside>
+  <div class="muted small">
+    <span id="cacheSize">正在检查本机缓存…</span>
+    <button id="clearCacheBtn" class="link small">清理旧记录和缓存</button>
+  </div>
 </main>
 
 <div id="doctorModal" class="modal" hidden>
@@ -198,6 +203,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20261109"></script>
+<script src="/static/app.js?v=20261110-choices"></script>
 </body>
 </html>

@@ -130,7 +130,7 @@ class YouTubeChromeMedia(Strategy):
         out = _dl_dir(ctx, self.key)
         path = ytdlp.download_media(ctx.url, out, at, keep_video=True, site_cookies=cookies)
         ctx.remember_info(ytdlp.read_info_json(out))
-        ensure_ok_media(path, at)
+        ensure_ok_media(path, at, require_audio=not ctx.options.video_only)
         ctx.media_path, ctx.media_strategy = path, self.key
         ctx.media_how = "用 Chrome 中 YouTube 的登录状态下载完整视频"
         at.success(f"下载好了完整视频：{path.stat().st_size / 1e6:.1f}MB")
@@ -147,7 +147,7 @@ class YtdlpEmbeddedClient(Strategy):
         path = ytdlp.download_media(ctx.url, out, at, keep_video=ctx.options.keep_video,
                                     extra_args=["--extractor-args", "youtube:player_client=web_embedded"])
         ctx.remember_info(ytdlp.read_info_json(out))
-        ensure_ok_media(path, at)
+        ensure_ok_media(path, at, require_audio=not ctx.options.video_only)
         ctx.media_path, ctx.media_strategy = path, self.key
         ctx.media_how = "yt-dlp（嵌入播放器通道）直接下载，没用 cookie"
         at.success(f"下载好了：{path.name}")
@@ -167,7 +167,7 @@ class YtdlpRetryLater(Strategy):
         out = _dl_dir(ctx, self.key)
         path = ytdlp.download_media(ctx.url, out, at, keep_video=ctx.options.keep_video)
         ctx.remember_info(ytdlp.read_info_json(out))
-        ensure_ok_media(path, at)
+        ensure_ok_media(path, at, require_audio=not ctx.options.video_only)
         ctx.media_path, ctx.media_strategy = path, self.key
         ctx.media_how = "yt-dlp 直接下载（等了一会儿再试才成功，没用 cookie）"
         at.success(f"下载好了：{path.name}")
