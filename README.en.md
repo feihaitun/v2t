@@ -6,7 +6,7 @@
 
 Works with Douyin, Xiaohongshu, YouTube, Bilibili, and X (Twitter). Video and audio files on your computer work too.
 
-![v2t demo: paste a link → pick what you need → start → download the transcript](docs/demo.gif)
+![v2t demo: paste a link → pick what you need → start → download the transcript](docs/demo.en.gif)
 
 ## Highlights
 
