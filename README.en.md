@@ -1,17 +1,63 @@
-# v2t · Video Downloader and Transcripts
+# v2t · Video to Text
 
 [中文](README.md) | **English**
 
-Paste a video link to download the video and its captions. If a video has no captions, v2t turns the speech into text on your own computer. Video and audio files on your computer work too.
+**Paste a video link. Get the video, captions, and a transcript.** No captions? v2t turns the speech into text on your own computer.
 
-Supported: Douyin, Xiaohongshu, YouTube, Bilibili, X (Twitter). Other sites may work, but there is no guarantee.
+Works with Douyin, Xiaohongshu, YouTube, Bilibili, and X (Twitter). Video and audio files on your computer work too.
+
+![v2t demo: paste a link → pick what you need → start → download the transcript](docs/demo.gif)
+
+## Highlights
+
+- **One link is enough**: paste a link, or a whole share message. v2t finds the link.
+- **Captions first, transcription when needed**: platform captions are fastest and most accurate. Without them, v2t transcribes locally with Whisper. On an M5 Mac, 20 seconds of speech took about 5 seconds.
+- **No login, no upload**: v2t uses public content by default, and speech is recognized only on your computer. For login-only videos, you can turn on a switch to borrow your Chrome login.
+- **See every step**: before starting, v2t lists the steps. While running, it shows what it is doing. If something fails, it says why in plain words.
+- **Ready to use**: export TXT, SRT, Markdown, or JSON. Drop the SRT straight into a video editor.
+- **On your phone too**: an Android preview app downloads videos and transcribes on the phone.
+
+## Three steps
+
+1. Install once (see "Install" below).
+2. Double-click **「打开视频转文字.command」** in the project folder.
+3. Paste a link → pick what you need → start. Download the results when it finishes.
+
+The app's buttons are in Chinese; the demo above has English captions.
+
+## How it works
+
+```mermaid
+flowchart LR
+    U(["Paste a link / drop a file"]) --> W
+
+    subgraph PC["Desktop · Mac"]
+        W["Web page<br/>127.0.0.1:8765"] --> S["Local server<br/>one process per task"]
+        S --> A["1 Platform captions<br/>yt-dlp"]
+        S --> B["2 Download video or audio<br/>yt-dlp · dedicated browser"]
+        B --> C["3 Extract audio<br/>ffmpeg"]
+        C --> D["4 Speech to text<br/>MLX Whisper · local"]
+        A --> O["Transcript<br/>TXT · SRT · MD · JSON"]
+        D --> O
+    end
+
+    subgraph AN["Android · preview"]
+        P["App"] --> Y["Video and platform captions<br/>yt-dlp · FFmpeg"]
+        P --> X["Speech to text<br/>sherpa-onnx · on the phone"]
+    end
+
+    CH["Chrome login<br/>optional, off by default"] -.-> S
+    CH -.->|USB sync, optional| P
+```
+
+- **Desktop**: the web page is only the interface; a local server does the work. Downloads try several methods in order and switch to the next one if a method is blocked.
+- **Android**: once installed, downloading and transcription run on the phone. Your Chrome login on the computer can be synced over USB (optional). See the [Android guide](android/README.md) (in Chinese).
 
 ## What you need
 
 - A Mac with an **Apple M-series chip** (M1 to M5). Speech-to-text only works on these Macs.
 - Other computers (Intel Mac, Windows, Linux) can try downloading videos and platform captions. This is not fully tested, and the app cannot transcribe there. See the [developer notes](docs/DEVELOPMENT.md#without-apple-silicon-or-mlx).
-- There is a separate Android preview app; see the [Android guide](android/README.md) (in Chinese). There is no iPhone app.
-- The app's buttons are in Chinese.
+- For phones: the Android preview app. There is no iPhone app.
 
 ## Install (once)
 
@@ -43,20 +89,9 @@ uv pip install --python .venv/bin/python -r requirements.txt
 ./v2t.sh serve
 ```
 
-Your browser opens [127.0.0.1:8765](http://127.0.0.1:8765/). That is the app. Keep the Terminal window open while you use it; press `Ctrl+C` to quit.
+Your browser opens [127.0.0.1:8765](http://127.0.0.1:8765/). That is the app. Keep the Terminal window open while you use it; press `Ctrl+C` to quit. Next time, just double-click **「打开视频转文字.command」**.
 
-Next time, just double-click **「打开视频转文字.command」** in the project folder.
-
-## How to use
-
-1. Paste a video link into the box. A whole share message works too. You can also drag in a video or audio file.
-2. Under 「你要什么？」 (What do you want?), pick one:
-   - **只下载视频** (Video only): save the video.
-   - **视频＋字幕** (Video + captions): save the video and get captions.
-   - **只要字幕** (Captions only): text only.
-3. When it finishes, click 「下载视频」 (Download video), 「下载 srt」 (Download srt), etc. to save the files.
-
-Platform captions are used first. Speech-to-text only runs when there are none. The first transcription downloads a speech model, so it takes longer.
+The first transcription downloads a speech model, so it takes longer.
 
 ## Videos that need a login (optional)
 
@@ -83,6 +118,7 @@ Login data (cookies) is used only in memory on your computer, briefly. It is nev
 - Only download and use content you have the right to use. Follow copyright law and each platform's terms.
 - This project is not affiliated with any of the platforms above.
 - Provided as is, with no guarantee that it keeps working. The author is not responsible for how you use it.
+- The demo video was generated with text-to-speech; the demo link is yt-dlp's public test video.
 
 ## License
 
